@@ -1,0 +1,112 @@
+{% extends '_layouts/cp.twig' %}
+
+{% do view.registerAssetBundle('justinholtweb\\freelog\\assetbundles\\FreelogAsset') %}
+
+{% set title = filename %}
+
+{% set crumbs = [
+    { label: 'Freelog', url: cpUrl('freelog') }
+] %}
+
+{% block sidebar %}
+    <nav>
+        <h6 class="heading">Log Files</h6>
+        <ul class="freelog-sidebar-files">
+            {% for file in files %}
+                <li class="{{ file.name == filename ? 'active' }}">
+                    <a href="{{ cpUrl('freelog/view', { file: file.name }) }}">{{ file.name }}</a>
+                </li>
+            {% endfor %}
+        </ul>
+    </nav>
+{% endblock %}
+
+{% block content %}
+    {# Toolbar: search, filter, actions #}
+    <form method="get" action="{{ cpUrl('freelog/view') }}">
+        {{ hiddenInput('file', filename) }}
+        <div class="freelog-toolbar">
+            <div class="search-container">
+                <input type="text" class="text fullwidth" name="search" value="{{ search }}" placeholder="Search log entries...">
+            </div>
+            <div>
+                <select name="level" class="text" onchange="this.form.submit()">
+                    <option value="">All Levels</option>
+                    {% for lvl in ['emergency', 'alert', 'critical', 'error', 'warning', 'notice', 'info', 'debug'] %}
+                        <option value="{{ lvl }}" {{ level == lvl ? 'selected' }}>{{ lvl|capitalize }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit" class="btn submit">Filter</button>
+            <a href="{{ cpUrl('freelog/download', { file: filename }) }}" class="btn">Download</a>
+        </div>
+    </form>
+
+    {# Tail / live refresh section #}
+    <div class="freelog-tail-controls">
+        <button id="freelog-tail-toggle" class="btn small submit">Start Auto-Refresh</button>
+        <span id="freelog-tail-status" class="freelog-tail-status">
+            <span class="dot"></span>
+            Auto-refresh
+        </span>
+    </div>
+    <div id="freelog-tail-content" class="freelog-tail" data-file="{{ filename }}" style="display: none;"></div>
+
+    {# Parsed entries table #}
+    {% if entries|length %}
+        <div class="freelog-entries">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Level</th>
+                        <th>Category</th>
+                        <th>Message</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in entries %}
+                        <tr data-expandable>
+                            <td class="col-date">{{ entry.date }}</td>
+                            <td class="col-level">
+                                <span class="freelog-level freelog-level-{{ entry.level|lower }}">{{ entry.level }}</span>
+                            </td>
+                            <td class="col-category" title="{{ entry.category }}">{{ entry.category }}</td>
+                            <td class="col-message">
+                                <span class="message-preview">{{ entry.message|split("\n")|first }}</span>
+                                <span class="message-full">{{ entry.message }}</span>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {# Pagination #}
+        {% if totalPages > 1 %}
+            <div class="freelog-pagination">
+                <span class="page-info">
+                    Showing {{ ((page - 1) * limit) + 1 }}–{{ min(page * limit, total) }} of {{ total }} entries
+                </span>
+                <div class="page-links">
+                    {% if page > 1 %}
+                        <a href="{{ cpUrl('freelog/view', { file: filename, search: search, level: level, page: page - 1 }) }}" class="btn small">&laquo; Prev</a>
+                    {% endif %}
+                    {% if page < totalPages %}
+                        <a href="{{ cpUrl('freelog/view', { file: filename, search: search, level: level, page: page + 1 }) }}" class="btn small">Next &raquo;</a>
+                    {% endif %}
+                </div>
+            </div>
+        {% endif %}
+    {% else %}
+        <div class="freelog-empty">
+            <p>
+                {% if search or level %}
+                    No entries match your filters.
+                {% else %}
+                    This log file is empty or could not be parsed.
+                {% endif %}
+            </p>
+        </div>
+    {% endif %}
+{% endblock %}

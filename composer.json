@@ -1,0 +1,41 @@
+{
+    "name": "justinholtweb/craft-freelog",
+    "description": "View, search, filter, and download server logs from the Craft CMS control panel.",
+    "type": "craft-plugin",
+    "keywords": [
+        "craft",
+        "cms",
+        "craftcms",
+        "logs",
+        "server-logs",
+        "debugging"
+    ],
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Justin Holt",
+            "homepage": "https://github.com/justinholtweb"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/justinholtweb/craft-freelogs/issues",
+        "source": "https://github.com/justinholtweb/craft-freelogs"
+    },
+    "require": {
+        "php": "^8.2",
+        "craftcms/cms": "^5.0.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "justinholtweb\\freelog\\": "src/"
+        }
+    },
+    "extra": {
+        "name": "Freelog",
+        "handle": "freelog",
+        "hasCpSettings": false,
+        "hasCpSection": true,
+        "changelogUrl": "https://raw.githubusercontent.com/justinholtweb/craft-freelogs/main/CHANGELOG.md",
+        "class": "justinholtweb\\freelog\\Plugin"
+    }
+}

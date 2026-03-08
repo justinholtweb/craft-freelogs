@@ -1,0 +1,223 @@
+<?php
+
+namespace justinholtweb\freelog\services;
+
+use Craft;
+use craft\base\Component;
+
+class LogService extends Component
+{
+    /**
+     * Get the path to the logs directory.
+     */
+    public function getLogsPath(): string
+    {
+        return Craft::getAlias('@storage/logs');
+    }
+
+    /**
+     * Get all log files in the logs directory.
+     *
+     * @return array<int, array{name: string, size: int, modified: int}>
+     */
+    public function getLogFiles(): array
+    {
+        $path = $this->getLogsPath();
+        if (!is_dir($path)) {
+            return [];
+        }
+
+        $files = [];
+        $iterator = new \DirectoryIterator($path);
+
+        foreach ($iterator as $file) {
+            if ($file->isDot() || $file->isDir()) {
+                continue;
+            }
+
+            $ext = strtolower($file->getExtension());
+            if (!in_array($ext, ['log', 'txt'], true)) {
+                continue;
+            }
+
+            $files[] = [
+                'name' => $file->getFilename(),
+                'size' => $file->getSize(),
+                'modified' => $file->getMTime(),
+            ];
+        }
+
+        usort($files, fn($a, $b) => $b['modified'] <=> $a['modified']);
+
+        return $files;
+    }
+
+    /**
+     * Read and parse a log file, returning structured entries.
+     *
+     * @param string $filename
+     * @param string|null $search
+     * @param string|null $level
+     * @param int $limit
+     * @param int $offset
+     * @return array{entries: array, total: int}
+     */
+    public function getLogEntries(string $filename, ?string $search = null, ?string $level = null, int $limit = 50, int $offset = 0): array
+    {
+        $filepath = $this->resolveFilePath($filename);
+        if ($filepath === null) {
+            return ['entries' => [], 'total' => 0];
+        }
+
+        $content = file_get_contents($filepath);
+        if ($content === false) {
+            return ['entries' => [], 'total' => 0];
+        }
+
+        $entries = $this->parseLogContent($content);
+
+        // Filter by level
+        if ($level) {
+            $entries = array_filter($entries, fn($entry) => strcasecmp($entry['level'], $level) === 0);
+        }
+
+        // Filter by search
+        if ($search) {
+            $searchLower = mb_strtolower($search);
+            $entries = array_filter($entries, fn($entry) => str_contains(mb_strtolower($entry['message']), $searchLower));
+        }
+
+        $entries = array_values($entries);
+        $total = count($entries);
+        $entries = array_slice($entries, $offset, $limit);
+
+        return ['entries' => $entries, 'total' => $total];
+    }
+
+    /**
+     * Get the tail of a log file (last N bytes).
+     */
+    public function getTail(string $filename, int $bytes = 8192): string
+    {
+        $filepath = $this->resolveFilePath($filename);
+        if ($filepath === null) {
+            return '';
+        }
+
+        $size = filesize($filepath);
+        if ($size === 0) {
+            return '';
+        }
+
+        $handle = fopen($filepath, 'r');
+        if ($handle === false) {
+            return '';
+        }
+
+        $readBytes = min($bytes, $size);
+        fseek($handle, -$readBytes, SEEK_END);
+        $content = fread($handle, $readBytes);
+        fclose($handle);
+
+        return $content ?: '';
+    }
+
+    /**
+     * Clear a log file.
+     */
+    public function clearLog(string $filename): bool
+    {
+        $filepath = $this->resolveFilePath($filename);
+        if ($filepath === null) {
+            return false;
+        }
+
+        return file_put_contents($filepath, '') !== false;
+    }
+
+    /**
+     * Get the full file path for a log file, with security checks.
+     */
+    public function resolveFilePath(string $filename): ?string
+    {
+        // Prevent directory traversal
+        $filename = basename($filename);
+        $filepath = $this->getLogsPath() . DIRECTORY_SEPARATOR . $filename;
+
+        if (!file_exists($filepath) || !is_file($filepath)) {
+            return null;
+        }
+
+        // Verify the file is within the logs directory
+        $realPath = realpath($filepath);
+        $logsRealPath = realpath($this->getLogsPath());
+
+        if ($realPath === false || $logsRealPath === false) {
+            return null;
+        }
+
+        if (!str_starts_with($realPath, $logsRealPath . DIRECTORY_SEPARATOR)) {
+            return null;
+        }
+
+        return $realPath;
+    }
+
+    /**
+     * Parse log content into structured entries.
+     *
+     * Handles Craft/Yii log format: YYYY-MM-DD HH:MM:SS [level][category] message
+     *
+     * @return array<int, array{date: string, level: string, category: string, message: string}>
+     */
+    private function parseLogContent(string $content): array
+    {
+        $entries = [];
+        $lines = explode("\n", $content);
+        $currentEntry = null;
+
+        // Pattern matches: 2024-01-15 10:30:45 [-level-][-category-] message
+        $pattern = '/^(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})\s\[(\w+)\]\[([^\]]*)\]\s?(.*)/';
+
+        foreach ($lines as $line) {
+            if (preg_match($pattern, $line, $matches)) {
+                if ($currentEntry !== null) {
+                    $entries[] = $currentEntry;
+                }
+                $currentEntry = [
+                    'date' => $matches[1],
+                    'level' => $matches[2],
+                    'category' => $matches[3],
+                    'message' => $matches[4],
+                ];
+            } elseif ($currentEntry !== null && trim($line) !== '') {
+                // Continuation of previous entry (stack trace, etc.)
+                $currentEntry['message'] .= "\n" . $line;
+            }
+        }
+
+        if ($currentEntry !== null) {
+            $entries[] = $currentEntry;
+        }
+
+        // Reverse so newest entries are first
+        return array_reverse($entries);
+    }
+
+    /**
+     * Format bytes to human-readable size.
+     */
+    public function formatBytes(int $bytes): string
+    {
+        $units = ['B', 'KB', 'MB', 'GB'];
+        $i = 0;
+        $size = (float) $bytes;
+
+        while ($size >= 1024 && $i < count($units) - 1) {
+            $size /= 1024;
+            $i++;
+        }
+
+        return round($size, 1) . ' ' . $units[$i];
+    }
+}

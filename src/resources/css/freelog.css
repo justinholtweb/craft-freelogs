@@ -1,0 +1,301 @@
+/* Freelog - Log Viewer Styles */
+
+.freelog-toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+}
+
+.freelog-toolbar .search-container {
+    flex: 1;
+    min-width: 200px;
+}
+
+.freelog-toolbar .search-container input {
+    width: 100%;
+}
+
+.freelog-file-list .file-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--gray-200);
+    transition: background-color 0.15s;
+}
+
+.freelog-file-list .file-row:hover {
+    background-color: var(--gray-050);
+}
+
+.freelog-file-list .file-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+}
+
+.freelog-file-list .file-name {
+    font-weight: 600;
+    color: var(--link-color);
+    text-decoration: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.freelog-file-list .file-name:hover {
+    text-decoration: underline;
+}
+
+.freelog-file-list .file-meta {
+    color: var(--gray-500);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.freelog-file-list .file-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+/* Log entries table */
+.freelog-entries {
+    font-family: 'SF Mono', 'Monaco', 'Menlo', 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.freelog-entries table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.freelog-entries th {
+    text-align: left;
+    padding: 8px 12px;
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--gray-500);
+    border-bottom: 2px solid var(--gray-200);
+    white-space: nowrap;
+    font-family: system-ui, -apple-system, sans-serif;
+}
+
+.freelog-entries td {
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--gray-100);
+    vertical-align: top;
+}
+
+.freelog-entries .col-date {
+    width: 160px;
+    white-space: nowrap;
+    color: var(--gray-500);
+}
+
+.freelog-entries .col-level {
+    width: 80px;
+    white-space: nowrap;
+}
+
+.freelog-entries .col-category {
+    width: 180px;
+    white-space: nowrap;
+    color: var(--gray-500);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 180px;
+}
+
+.freelog-entries .col-message {
+    word-break: break-word;
+    white-space: pre-wrap;
+    max-width: 0;
+}
+
+.freelog-entries tr:hover td {
+    background-color: var(--gray-050);
+}
+
+.freelog-entries tr.expanded td {
+    background-color: var(--gray-050);
+}
+
+.freelog-entries .message-preview {
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 600px;
+    display: block;
+}
+
+.freelog-entries .message-full {
+    display: none;
+    white-space: pre-wrap;
+    word-break: break-word;
+    cursor: pointer;
+}
+
+.freelog-entries tr.expanded .message-preview {
+    display: none;
+}
+
+.freelog-entries tr.expanded .message-full {
+    display: block;
+}
+
+/* Level badges */
+.freelog-level {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-family: system-ui, -apple-system, sans-serif;
+}
+
+.freelog-level-emergency,
+.freelog-level-alert,
+.freelog-level-critical {
+    background-color: var(--red-050);
+    color: var(--red-600);
+}
+
+.freelog-level-error {
+    background-color: var(--red-050);
+    color: var(--red-500);
+}
+
+.freelog-level-warning {
+    background-color: var(--yellow-050);
+    color: var(--yellow-700);
+}
+
+.freelog-level-notice,
+.freelog-level-info {
+    background-color: var(--blue-050);
+    color: var(--blue-500);
+}
+
+.freelog-level-debug {
+    background-color: var(--gray-100);
+    color: var(--gray-500);
+}
+
+/* Pagination */
+.freelog-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 0;
+    border-top: 1px solid var(--gray-200);
+    margin-top: 8px;
+}
+
+.freelog-pagination .page-info {
+    color: var(--gray-500);
+    font-size: 13px;
+}
+
+.freelog-pagination .page-links {
+    display: flex;
+    gap: 4px;
+}
+
+/* Tail mode */
+.freelog-tail {
+    background-color: var(--gray-900);
+    color: var(--gray-100);
+    padding: 16px;
+    border-radius: 4px;
+    font-family: 'SF Mono', 'Monaco', 'Menlo', 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+.freelog-tail-controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.freelog-tail-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--gray-500);
+}
+
+.freelog-tail-status .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--gray-400);
+}
+
+.freelog-tail-status.active .dot {
+    background-color: var(--green-500);
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+/* Empty state */
+.freelog-empty {
+    text-align: center;
+    padding: 48px 24px;
+    color: var(--gray-400);
+}
+
+.freelog-empty p {
+    margin: 8px 0 0;
+    font-size: 14px;
+}
+
+/* Sidebar file list in view mode */
+.freelog-sidebar-files {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.freelog-sidebar-files li a {
+    display: block;
+    padding: 6px 12px;
+    color: var(--text-color);
+    text-decoration: none;
+    border-radius: 4px;
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.freelog-sidebar-files li a:hover {
+    background-color: var(--gray-100);
+}
+
+.freelog-sidebar-files li.active a {
+    background-color: var(--blue-050);
+    color: var(--blue-500);
+    font-weight: 600;
+}
