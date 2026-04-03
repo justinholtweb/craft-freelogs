@@ -166,7 +166,9 @@ class LogService extends Component
     /**
      * Parse log content into structured entries.
      *
-     * Handles Craft/Yii log format: YYYY-MM-DD HH:MM:SS [level][category] message
+     * Supports both formats:
+     * - Craft 5 Monolog: [2024-01-15T10:30:45+00:00] craft.ERROR: message {"context"} []
+     * - Craft 3/4 Yii:   2024-01-15 10:30:45 [error][category] message
      *
      * @return array<int, array{date: string, level: string, category: string, message: string}>
      */
@@ -176,11 +178,43 @@ class LogService extends Component
         $lines = explode("\n", $content);
         $currentEntry = null;
 
-        // Pattern matches: 2024-01-15 10:30:45 [-level-][-category-] message
-        $pattern = '/^(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})\s\[(\w+)\]\[([^\]]*)\]\s?(.*)/';
+        // Craft 5 format: 2026-04-03 11:52:11 [channel.LEVEL] [category] message
+        $craft5Pattern = '/^(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})\s\[(\S+?)\.(\w+)\]\s\[([^\]]*)\]\s?(.*)/';
+
+        // Monolog format: [2024-01-15T10:30:45+00:00] channel.LEVEL: message
+        $monologPattern = '/^\[(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^\]]*)\]\s+(\S+?)\.(\w+):\s?(.*)/';
+
+        // Craft 3/4 Yii format: 2024-01-15 10:30:45 [level][category] message
+        $yiiPattern = '/^(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})\s\[(\w+)\]\[([^\]]*)\]\s?(.*)/';
 
         foreach ($lines as $line) {
-            if (preg_match($pattern, $line, $matches)) {
+            if (preg_match($craft5Pattern, $line, $matches)) {
+                if ($currentEntry !== null) {
+                    $entries[] = $currentEntry;
+                }
+                $currentEntry = [
+                    'date' => $matches[1],
+                    'level' => strtolower($matches[3]),
+                    'category' => $matches[4],
+                    'message' => $matches[5],
+                ];
+            } elseif (preg_match($monologPattern, $line, $matches)) {
+                if ($currentEntry !== null) {
+                    $entries[] = $currentEntry;
+                }
+                $date = $matches[1];
+                try {
+                    $dt = new \DateTime($date);
+                    $date = $dt->format('Y-m-d H:i:s');
+                } catch (\Exception $e) {
+                }
+                $currentEntry = [
+                    'date' => $date,
+                    'level' => strtolower($matches[3]),
+                    'category' => $matches[2],
+                    'message' => $matches[4],
+                ];
+            } elseif (preg_match($yiiPattern, $line, $matches)) {
                 if ($currentEntry !== null) {
                     $entries[] = $currentEntry;
                 }

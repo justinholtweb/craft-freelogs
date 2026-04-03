@@ -73,6 +73,7 @@ class LogsController extends Controller
         $totalPages = (int) ceil($result['total'] / $limit);
 
         $files = $logService->getLogFiles();
+        usort($files, fn($a, $b) => strcasecmp($a['name'], $b['name']));
 
         return $this->renderTemplate('freelog/view', [
             'filename' => $filename,
