@@ -4,11 +4,17 @@ namespace justinholtweb\freelog\services;
 
 use Craft;
 use craft\base\Component;
+use DateTime;
+use DirectoryIterator;
+use Throwable;
 
+/**
+ * Log service.
+ */
 class LogService extends Component
 {
     /**
-     * Get the path to the logs directory.
+     * Returns the path to the logs directory.
      */
     public function getLogsPath(): string
     {
@@ -16,19 +22,20 @@ class LogService extends Component
     }
 
     /**
-     * Get all log files in the logs directory.
+     * Returns all log files in the logs directory.
      *
      * @return array<int, array{name: string, size: int, modified: int}>
      */
     public function getLogFiles(): array
     {
         $path = $this->getLogsPath();
+
         if (!is_dir($path)) {
             return [];
         }
 
         $files = [];
-        $iterator = new \DirectoryIterator($path);
+        $iterator = new DirectoryIterator($path);
 
         foreach ($iterator as $file) {
             if ($file->isDot() || $file->isDir()) {
@@ -36,6 +43,7 @@ class LogService extends Component
             }
 
             $ext = strtolower($file->getExtension());
+
             if (!in_array($ext, ['log', 'txt'], true)) {
                 continue;
             }
@@ -53,38 +61,41 @@ class LogService extends Component
     }
 
     /**
-     * Read and parse a log file, returning structured entries.
+     * Reads and parses a log file, returning structured entries.
      *
-     * @param string $filename
-     * @param string|null $search
-     * @param string|null $level
-     * @param int $limit
-     * @param int $offset
      * @return array{entries: array, total: int}
      */
-    public function getLogEntries(string $filename, ?string $search = null, ?string $level = null, int $limit = 50, int $offset = 0): array
-    {
+    public function getLogEntries(
+        string $filename,
+        ?string $search = null,
+        ?string $level = null,
+        int $limit = 50,
+        int $offset = 0,
+    ): array {
         $filepath = $this->resolveFilePath($filename);
+
         if ($filepath === null) {
             return ['entries' => [], 'total' => 0];
         }
 
         $content = file_get_contents($filepath);
+
         if ($content === false) {
             return ['entries' => [], 'total' => 0];
         }
 
-        $entries = $this->parseLogContent($content);
+        $entries = $this->_parseLogContent($content);
 
-        // Filter by level
-        if ($level) {
+        if ($level !== null && $level !== '') {
             $entries = array_filter($entries, fn($entry) => strcasecmp($entry['level'], $level) === 0);
         }
 
-        // Filter by search
-        if ($search) {
+        if ($search !== null && $search !== '') {
             $searchLower = mb_strtolower($search);
-            $entries = array_filter($entries, fn($entry) => str_contains(mb_strtolower($entry['message']), $searchLower));
+            $entries = array_filter(
+                $entries,
+                fn($entry) => str_contains(mb_strtolower($entry['message']), $searchLower),
+            );
         }
 
         $entries = array_values($entries);
@@ -95,21 +106,24 @@ class LogService extends Component
     }
 
     /**
-     * Get the tail of a log file (last N bytes).
+     * Returns the tail of a log file (last N bytes).
      */
     public function getTail(string $filename, int $bytes = 8192): string
     {
         $filepath = $this->resolveFilePath($filename);
+
         if ($filepath === null) {
             return '';
         }
 
         $size = filesize($filepath);
+
         if ($size === 0) {
             return '';
         }
 
         $handle = fopen($filepath, 'r');
+
         if ($handle === false) {
             return '';
         }
@@ -123,11 +137,12 @@ class LogService extends Component
     }
 
     /**
-     * Clear a log file.
+     * Clears a log file.
      */
     public function clearLog(string $filename): bool
     {
         $filepath = $this->resolveFilePath($filename);
+
         if ($filepath === null) {
             return false;
         }
@@ -136,11 +151,10 @@ class LogService extends Component
     }
 
     /**
-     * Get the full file path for a log file, with security checks.
+     * Returns the full file path for a log file, with security checks.
      */
     public function resolveFilePath(string $filename): ?string
     {
-        // Prevent directory traversal
         $filename = basename($filename);
         $filepath = $this->getLogsPath() . DIRECTORY_SEPARATOR . $filename;
 
@@ -148,7 +162,6 @@ class LogService extends Component
             return null;
         }
 
-        // Verify the file is within the logs directory
         $realPath = realpath($filepath);
         $logsRealPath = realpath($this->getLogsPath());
 
@@ -164,15 +177,33 @@ class LogService extends Component
     }
 
     /**
-     * Parse log content into structured entries.
+     * Formats bytes to a human-readable size.
+     */
+    public function formatBytes(int $bytes): string
+    {
+        $units = ['B', 'KB', 'MB', 'GB'];
+        $i = 0;
+        $size = (float)$bytes;
+
+        while ($size >= 1024 && $i < count($units) - 1) {
+            $size /= 1024;
+            $i++;
+        }
+
+        return round($size, 1) . ' ' . $units[$i];
+    }
+
+    /**
+     * Parses log content into structured entries.
      *
-     * Supports both formats:
-     * - Craft 5 Monolog: [2024-01-15T10:30:45+00:00] craft.ERROR: message {"context"} []
-     * - Craft 3/4 Yii:   2024-01-15 10:30:45 [error][category] message
+     * Supports:
+     * - Craft 5 default: 2026-04-03 11:52:11 [channel.LEVEL] [category] message
+     * - Monolog:         [2024-01-15T10:30:45+00:00] channel.LEVEL: message
+     * - Craft 3/4 Yii:   2024-01-15 10:30:45 [level][category] message
      *
      * @return array<int, array{date: string, level: string, category: string, message: string}>
      */
-    private function parseLogContent(string $content): array
+    private function _parseLogContent(string $content): array
     {
         $entries = [];
         $lines = explode("\n", $content);
@@ -204,9 +235,8 @@ class LogService extends Component
                 }
                 $date = $matches[1];
                 try {
-                    $dt = new \DateTime($date);
-                    $date = $dt->format('Y-m-d H:i:s');
-                } catch (\Exception $e) {
+                    $date = (new DateTime($date))->format('Y-m-d H:i:s');
+                } catch (Throwable) {
                 }
                 $currentEntry = [
                     'date' => $date,
@@ -234,24 +264,6 @@ class LogService extends Component
             $entries[] = $currentEntry;
         }
 
-        // Reverse so newest entries are first
         return array_reverse($entries);
-    }
-
-    /**
-     * Format bytes to human-readable size.
-     */
-    public function formatBytes(int $bytes): string
-    {
-        $units = ['B', 'KB', 'MB', 'GB'];
-        $i = 0;
-        $size = (float) $bytes;
-
-        while ($size >= 1024 && $i < count($units) - 1) {
-            $size /= 1024;
-            $i++;
-        }
-
-        return round($size, 1) . ' ' . $units[$i];
     }
 }

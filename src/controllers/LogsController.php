@@ -5,10 +5,12 @@ namespace justinholtweb\freelog\controllers;
 use Craft;
 use craft\web\Controller;
 use justinholtweb\freelog\Plugin;
-use yii\web\ForbiddenHttpException;
 use yii\web\NotFoundHttpException;
 use yii\web\Response;
 
+/**
+ * Logs controller.
+ */
 class LogsController extends Controller
 {
     /**
@@ -26,18 +28,19 @@ class LogsController extends Controller
     }
 
     /**
-     * Display the log file list / main dashboard.
+     * Displays the log file list.
      */
     public function actionIndex(): Response
     {
-        $logService = Plugin::getInstance()->logService;
+        $logService = Plugin::getInstance()->getLogService();
+        $formatter = Craft::$app->getFormatter();
         $files = $logService->getLogFiles();
 
-        // Format file sizes for display
         foreach ($files as &$file) {
             $file['sizeFormatted'] = $logService->formatBytes($file['size']);
-            $file['modifiedFormatted'] = Craft::$app->getFormatter()->asDatetime($file['modified']);
+            $file['modifiedFormatted'] = $formatter->asDatetime($file['modified']);
         }
+        unset($file);
 
         return $this->renderTemplate('freelog/index', [
             'files' => $files,
@@ -45,7 +48,7 @@ class LogsController extends Controller
     }
 
     /**
-     * View a specific log file with search/filter.
+     * Displays a specific log file with search and filter.
      */
     public function actionView(): Response
     {
@@ -56,21 +59,20 @@ class LogsController extends Controller
             throw new NotFoundHttpException('Log file not specified.');
         }
 
-        $logService = Plugin::getInstance()->logService;
-        $filepath = $logService->resolveFilePath($filename);
+        $logService = Plugin::getInstance()->getLogService();
 
-        if ($filepath === null) {
+        if ($logService->resolveFilePath($filename) === null) {
             throw new NotFoundHttpException('Log file not found.');
         }
 
         $search = $request->getQueryParam('search', '');
         $level = $request->getQueryParam('level', '');
-        $page = (int) $request->getQueryParam('page', 1);
+        $page = (int)$request->getQueryParam('page', 1);
         $limit = 50;
         $offset = ($page - 1) * $limit;
 
         $result = $logService->getLogEntries($filename, $search ?: null, $level ?: null, $limit, $offset);
-        $totalPages = (int) ceil($result['total'] / $limit);
+        $totalPages = (int)ceil($result['total'] / $limit);
 
         $files = $logService->getLogFiles();
         usort($files, fn($a, $b) => strcasecmp($a['name'], $b['name']));
@@ -89,7 +91,7 @@ class LogsController extends Controller
     }
 
     /**
-     * Download a log file.
+     * Downloads a log file.
      */
     public function actionDownload(): Response
     {
@@ -99,8 +101,7 @@ class LogsController extends Controller
             throw new NotFoundHttpException('Log file not specified.');
         }
 
-        $logService = Plugin::getInstance()->logService;
-        $filepath = $logService->resolveFilePath($filename);
+        $filepath = Plugin::getInstance()->getLogService()->resolveFilePath($filename);
 
         if ($filepath === null) {
             throw new NotFoundHttpException('Log file not found.');
@@ -110,7 +111,7 @@ class LogsController extends Controller
     }
 
     /**
-     * Clear a log file.
+     * Clears a log file.
      */
     public function actionClear(): Response
     {
@@ -122,12 +123,12 @@ class LogsController extends Controller
             throw new NotFoundHttpException('Log file not specified.');
         }
 
-        $logService = Plugin::getInstance()->logService;
+        $session = Craft::$app->getSession();
 
-        if ($logService->clearLog($filename)) {
-            Craft::$app->getSession()->setNotice("Log file \"{$filename}\" cleared.");
+        if (Plugin::getInstance()->getLogService()->clearLog($filename)) {
+            $session->setNotice("Log file \"$filename\" cleared.");
         } else {
-            Craft::$app->getSession()->setError("Could not clear \"{$filename}\".");
+            $session->setError("Could not clear \"$filename\".");
         }
 
         return $this->redirect('freelog');
@@ -138,18 +139,16 @@ class LogsController extends Controller
      */
     public function actionTail(): Response
     {
-        $request = Craft::$app->getRequest();
-        $filename = $request->getQueryParam('file');
+        $this->requireAcceptsJson();
+
+        $filename = Craft::$app->getRequest()->getQueryParam('file');
 
         if (!$filename) {
             throw new NotFoundHttpException('Log file not specified.');
         }
 
-        $logService = Plugin::getInstance()->logService;
-        $content = $logService->getTail($filename);
-
         return $this->asJson([
-            'content' => $content,
+            'content' => Plugin::getInstance()->getLogService()->getTail($filename),
         ]);
     }
 }
