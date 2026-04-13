@@ -42,16 +42,17 @@ class LogService extends Component
                 continue;
             }
 
-            $ext = strtolower($file->getExtension());
+            $filename = $file->getFilename();
 
-            if (!in_array($ext, ['log', 'txt'], true)) {
+            if (!$this->_isSupportedLogFile($filename)) {
                 continue;
             }
 
             $files[] = [
-                'name' => $file->getFilename(),
+                'name' => $filename,
                 'size' => $file->getSize(),
                 'modified' => $file->getMTime(),
+                'compressed' => $this->isCompressed($filename),
             ];
         }
 
@@ -78,9 +79,9 @@ class LogService extends Component
             return ['entries' => [], 'total' => 0];
         }
 
-        $content = file_get_contents($filepath);
+        $content = $this->_readFileContent($filepath);
 
-        if ($content === false) {
+        if ($content === null) {
             return ['entries' => [], 'total' => 0];
         }
 
@@ -116,6 +117,17 @@ class LogService extends Component
             return '';
         }
 
+        if ($this->isCompressed($filename)) {
+            // gzip has no cheap seek-to-end; decompress in full and slice.
+            $content = $this->_readFileContent($filepath);
+
+            if ($content === null || $content === '') {
+                return '';
+            }
+
+            return substr($content, -$bytes);
+        }
+
         $size = filesize($filepath);
 
         if ($size === 0) {
@@ -147,7 +159,18 @@ class LogService extends Component
             return false;
         }
 
-        return file_put_contents($filepath, '') !== false;
+        // Keep gzipped files valid after clearing so they can still be read.
+        $empty = $this->isCompressed($filename) ? (string)gzencode('') : '';
+
+        return file_put_contents($filepath, $empty) !== false;
+    }
+
+    /**
+     * Returns true if the filename indicates a gzip-compressed log.
+     */
+    public function isCompressed(string $filename): bool
+    {
+        return str_ends_with(strtolower($filename), '.gz');
     }
 
     /**
@@ -191,6 +214,44 @@ class LogService extends Component
         }
 
         return round($size, 1) . ' ' . $units[$i];
+    }
+
+    /**
+     * Returns true if the filename has a supported log extension.
+     */
+    private function _isSupportedLogFile(string $filename): bool
+    {
+        $lower = strtolower($filename);
+
+        foreach (['.log', '.txt', '.log.gz', '.txt.gz'] as $suffix) {
+            if (str_ends_with($lower, $suffix)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Reads a log file into a string, transparently decompressing gzip.
+     */
+    private function _readFileContent(string $filepath): ?string
+    {
+        if ($this->isCompressed($filepath)) {
+            $raw = file_get_contents($filepath);
+
+            if ($raw === false || $raw === '') {
+                return $raw === '' ? '' : null;
+            }
+
+            $decoded = @gzdecode($raw);
+
+            return $decoded === false ? null : $decoded;
+        }
+
+        $content = file_get_contents($filepath);
+
+        return $content === false ? null : $content;
     }
 
     /**

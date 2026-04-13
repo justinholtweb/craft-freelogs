@@ -23,6 +23,9 @@
                                 <a class="file-name" href="{{ cpUrl('freelog/view', { file: file.name }) }}">
                                     {{ file.name }}
                                 </a>
+                                {% if file.compressed %}
+                                    <span class="freelog-badge" title="Gzip-compressed; decompressed on read">gz</span>
+                                {% endif %}
                             </td>
                             <td class="freelog-file-meta">{{ file.sizeFormatted }}</td>
                             <td class="freelog-file-meta">{{ file.modifiedFormatted }}</td>

@@ -14,7 +14,10 @@
         <ul class="freelog-sidebar-files">
             {% for file in files %}
                 <li class="{{ file.name == filename ? 'active' }}">
-                    <a href="{{ cpUrl('freelog/view', { file: file.name }) }}">{{ file.name }}</a>
+                    <a href="{{ cpUrl('freelog/view', { file: file.name }) }}">
+                        {{ file.name }}
+                        {% if file.compressed %}<span class="freelog-badge">gz</span>{% endif %}
+                    </a>
                 </li>
             {% endfor %}
         </ul>

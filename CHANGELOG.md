@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Detect and display gzip-compressed log files (`.log.gz`, `.txt.gz`) alongside plain logs
+
 ## 1.0.0 - 2026-03-08
 
 ### Added
