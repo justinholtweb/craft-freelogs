@@ -218,18 +218,17 @@ class LogService extends Component
 
     /**
      * Returns true if the filename has a supported log extension.
+     *
+     * Matches plain logs (foo.log, foo.txt) and gzipped rotations
+     * produced by logrotate, including numbered (foo.log.1.gz) and
+     * dateext (foo.log-20260325.gz) variants.
      */
     private function _isSupportedLogFile(string $filename): bool
     {
-        $lower = strtolower($filename);
-
-        foreach (['.log', '.txt', '.log.gz', '.txt.gz'] as $suffix) {
-            if (str_ends_with($lower, $suffix)) {
-                return true;
-            }
-        }
-
-        return false;
+        return (bool)preg_match(
+            '/\.(log|txt)(\.\d+|-\d+)?(\.gz)?$/i',
+            $filename,
+        );
     }
 
     /**
@@ -261,6 +260,9 @@ class LogService extends Component
      * - Craft 5 default: 2026-04-03 11:52:11 [channel.LEVEL] [category] message
      * - Monolog:         [2024-01-15T10:30:45+00:00] channel.LEVEL: message
      * - Craft 3/4 Yii:   2024-01-15 10:30:45 [level][category] message
+     * - Plain level:     2026-04-14 14:15:37 [LEVEL] message (e.g. Formie)
+     * - Bracketed date:  [2026-04-15 07:33:42] message (e.g. Blitz)
+     * - Bare date:       2026-04-10 14:30:42 message
      *
      * @return array<int, array{date: string, level: string, category: string, message: string}>
      */
@@ -278,6 +280,15 @@ class LogService extends Component
 
         // Craft 3/4 Yii format: 2024-01-15 10:30:45 [level][category] message
         $yiiPattern = '/^(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})\s\[(\w+)\]\[([^\]]*)\]\s?(.*)/';
+
+        // Plain level format: 2026-04-14 14:15:37 [LEVEL] message
+        $plainLevelPattern = '/^(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})\s\[(\w+)\]\s?(.*)/';
+
+        // Bracketed date format: [2026-04-15 07:33:42] message
+        $bracketedDatePattern = '/^\[(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})\]\s?(.*)/';
+
+        // Bare date format: 2026-04-10 14:30:42 message
+        $bareDatePattern = '/^(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})\s(.*)/';
 
         foreach ($lines as $line) {
             if (preg_match($craft5Pattern, $line, $matches)) {
@@ -314,6 +325,36 @@ class LogService extends Component
                     'level' => $matches[2],
                     'category' => $matches[3],
                     'message' => $matches[4],
+                ];
+            } elseif (preg_match($plainLevelPattern, $line, $matches)) {
+                if ($currentEntry !== null) {
+                    $entries[] = $currentEntry;
+                }
+                $currentEntry = [
+                    'date' => $matches[1],
+                    'level' => strtolower($matches[2]),
+                    'category' => '',
+                    'message' => $matches[3],
+                ];
+            } elseif (preg_match($bracketedDatePattern, $line, $matches)) {
+                if ($currentEntry !== null) {
+                    $entries[] = $currentEntry;
+                }
+                $currentEntry = [
+                    'date' => $matches[1],
+                    'level' => 'info',
+                    'category' => '',
+                    'message' => $matches[2],
+                ];
+            } elseif (preg_match($bareDatePattern, $line, $matches)) {
+                if ($currentEntry !== null) {
+                    $entries[] = $currentEntry;
+                }
+                $currentEntry = [
+                    'date' => $matches[1],
+                    'level' => 'info',
+                    'category' => '',
+                    'message' => $matches[2],
                 ];
             } elseif ($currentEntry !== null && trim($line) !== '') {
                 // Continuation of previous entry (stack trace, etc.)
