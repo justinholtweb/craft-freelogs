@@ -1,6 +1,20 @@
 # Changelog
 
 
+## 5.0.4 - 2026-07-19
+
+### Fixed
+
+- `getTail()` now handles `filesize()` returning `false` on unreadable files instead of attempting an invalid read.
+- Log viewer pagination clamps the `page` parameter to a minimum of 1, so a negative or zero page no longer produces a negative offset.
+- Yii-format (`[LEVEL][category]`) log levels are now lowercased to match every other supported format for consistent display and filtering.
+- Downloaded log files use a sanitized (`basename`) filename in the download header.
+
+### Internal
+
+- Added a PHPUnit test suite covering log parsing, filtering, tailing, clearing, and path-traversal protection.
+- Added PHPStan static analysis (level 8, clean) with the official CraftCMS ruleset.
+
 ## 5.0.3 - 2026-04-15
 
 ### Fixed

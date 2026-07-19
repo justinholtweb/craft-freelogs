@@ -24,7 +24,7 @@ class LogService extends Component
     /**
      * Returns all log files in the logs directory.
      *
-     * @return array<int, array{name: string, size: int, modified: int}>
+     * @return array<int, array{name: string, size: int, modified: int, compressed: bool}>
      */
     public function getLogFiles(): array
     {
@@ -64,7 +64,7 @@ class LogService extends Component
     /**
      * Reads and parses a log file, returning structured entries.
      *
-     * @return array{entries: array, total: int}
+     * @return array{entries: list<array{date: string, level: string, category: string, message: string}>, total: int}
      */
     public function getLogEntries(
         string $filename,
@@ -130,7 +130,7 @@ class LogService extends Component
 
         $size = filesize($filepath);
 
-        if ($size === 0) {
+        if ($size === false || $size === 0) {
             return '';
         }
 
@@ -141,6 +141,13 @@ class LogService extends Component
         }
 
         $readBytes = min($bytes, $size);
+
+        if ($readBytes < 1) {
+            fclose($handle);
+
+            return '';
+        }
+
         fseek($handle, -$readBytes, SEEK_END);
         $content = fread($handle, $readBytes);
         fclose($handle);
@@ -322,7 +329,7 @@ class LogService extends Component
                 }
                 $currentEntry = [
                     'date' => $matches[1],
-                    'level' => $matches[2],
+                    'level' => strtolower($matches[2]),
                     'category' => $matches[3],
                     'message' => $matches[4],
                 ];

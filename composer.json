@@ -2,7 +2,7 @@
     "name": "justinholtweb/craft-freelog",
     "description": "View, search, filter, and download server logs from the Craft CMS control panel.",
     "type": "craft-plugin",
-    "version": "5.0.3",
+    "version": "5.0.4",
     "keywords": [
         "craft",
         "cms",
@@ -26,9 +26,28 @@
         "php": "^8.2",
         "craftcms/cms": "^5.0.0"
     },
+    "require-dev": {
+        "craftcms/phpstan": "dev-main",
+        "phpunit/phpunit": "^10.5"
+    },
     "autoload": {
         "psr-4": {
             "justinholtweb\\freelog\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "justinholtweb\\freelog\\tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "phpstan": "phpstan analyse --memory-limit=1G",
+        "test": "phpunit"
+    },
+    "config": {
+        "allow-plugins": {
+            "yiisoft/yii2-composer": true,
+            "craftcms/plugin-installer": true
         }
     },
     "extra": {

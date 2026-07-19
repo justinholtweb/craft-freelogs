@@ -5,6 +5,8 @@ namespace justinholtweb\freelog\controllers;
 use Craft;
 use craft\web\Controller;
 use justinholtweb\freelog\Plugin;
+use justinholtweb\freelog\services\LogService;
+use yii\base\InvalidConfigException;
 use yii\web\NotFoundHttpException;
 use yii\web\Response;
 
@@ -32,7 +34,7 @@ class LogsController extends Controller
      */
     public function actionIndex(): Response
     {
-        $logService = Plugin::getInstance()->getLogService();
+        $logService = $this->logService();
         $formatter = Craft::$app->getFormatter();
         $files = $logService->getLogFiles();
 
@@ -52,22 +54,21 @@ class LogsController extends Controller
      */
     public function actionView(): Response
     {
-        $request = Craft::$app->getRequest();
-        $filename = $request->getQueryParam('file');
+        $filename = $this->request->getQueryParam('file');
 
         if (!$filename) {
             throw new NotFoundHttpException('Log file not specified.');
         }
 
-        $logService = Plugin::getInstance()->getLogService();
+        $logService = $this->logService();
 
         if ($logService->resolveFilePath($filename) === null) {
             throw new NotFoundHttpException('Log file not found.');
         }
 
-        $search = $request->getQueryParam('search', '');
-        $level = $request->getQueryParam('level', '');
-        $page = (int)$request->getQueryParam('page', 1);
+        $search = $this->request->getQueryParam('search', '');
+        $level = $this->request->getQueryParam('level', '');
+        $page = max(1, (int)$this->request->getQueryParam('page', 1));
         $limit = 50;
         $offset = ($page - 1) * $limit;
 
@@ -95,19 +96,19 @@ class LogsController extends Controller
      */
     public function actionDownload(): Response
     {
-        $filename = Craft::$app->getRequest()->getQueryParam('file');
+        $filename = $this->request->getQueryParam('file');
 
         if (!$filename) {
             throw new NotFoundHttpException('Log file not specified.');
         }
 
-        $filepath = Plugin::getInstance()->getLogService()->resolveFilePath($filename);
+        $filepath = $this->logService()->resolveFilePath($filename);
 
         if ($filepath === null) {
             throw new NotFoundHttpException('Log file not found.');
         }
 
-        return Craft::$app->getResponse()->sendFile($filepath, $filename);
+        return $this->response->sendFile($filepath, basename($filename));
     }
 
     /**
@@ -117,7 +118,7 @@ class LogsController extends Controller
     {
         $this->requirePostRequest();
 
-        $filename = Craft::$app->getRequest()->getBodyParam('file');
+        $filename = $this->request->getBodyParam('file');
 
         if (!$filename) {
             throw new NotFoundHttpException('Log file not specified.');
@@ -125,7 +126,7 @@ class LogsController extends Controller
 
         $session = Craft::$app->getSession();
 
-        if (Plugin::getInstance()->getLogService()->clearLog($filename)) {
+        if ($this->logService()->clearLog($filename)) {
             $session->setNotice("Log file \"$filename\" cleared.");
         } else {
             $session->setError("Could not clear \"$filename\".");
@@ -141,14 +142,30 @@ class LogsController extends Controller
     {
         $this->requireAcceptsJson();
 
-        $filename = Craft::$app->getRequest()->getQueryParam('file');
+        $filename = $this->request->getQueryParam('file');
 
         if (!$filename) {
             throw new NotFoundHttpException('Log file not specified.');
         }
 
         return $this->asJson([
-            'content' => Plugin::getInstance()->getLogService()->getTail($filename),
+            'content' => $this->logService()->getTail($filename),
         ]);
+    }
+
+    /**
+     * Returns the log service.
+     *
+     * @throws InvalidConfigException if the plugin instance is unavailable.
+     */
+    private function logService(): LogService
+    {
+        $plugin = Plugin::getInstance();
+
+        if ($plugin === null) {
+            throw new InvalidConfigException('The Freelog plugin is not available.');
+        }
+
+        return $plugin->getLogService();
     }
 }

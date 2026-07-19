@@ -21,6 +21,9 @@ class Plugin extends BasePlugin
     public bool $hasCpSection = true;
     public bool $hasCpSettings = false;
 
+    /**
+     * @return array<string, mixed>
+     */
     public static function config(): array
     {
         return [
@@ -67,9 +70,15 @@ class Plugin extends BasePlugin
      */
     public function getLogService(): LogService
     {
-        return $this->get('logService');
+        /** @var LogService $service */
+        $service = $this->get('logService');
+
+        return $service;
     }
 
+    /**
+     * @return array<string, mixed>|null
+     */
     public function getCpNavItem(): ?array
     {
         $navItem = parent::getCpNavItem();
