@@ -35,7 +35,11 @@
             fetchTail(filename);
         }, 2000);
 
-        tailToggle.textContent = 'Stop';
+        // The panel starts hidden; until 5.0.5 nothing ever showed it, so the tail polled into
+        // an invisible box.
+        tailContainer.hidden = false;
+        tailToggle.setAttribute('aria-expanded', 'true');
+        tailToggle.textContent = Craft.t('freelog', 'Stop auto-refresh');
         tailToggle.classList.remove('submit');
         tailToggle.classList.add('secondary');
         if (tailStatus) {
@@ -50,7 +54,8 @@
         clearInterval(tailInterval);
         tailInterval = null;
 
-        tailToggle.textContent = 'Start Auto-Refresh';
+        tailToggle.setAttribute('aria-expanded', 'false');
+        tailToggle.textContent = Craft.t('freelog', 'Start auto-refresh');
         tailToggle.classList.remove('secondary');
         tailToggle.classList.add('submit');
         if (tailStatus) {
@@ -82,10 +87,18 @@
             });
     }
 
+    // Filter as soon as a level is picked (was an inline onchange).
+    var level = document.getElementById('freelog-level');
+    if (level && level.form) {
+        level.addEventListener('change', function () {
+            level.form.submit();
+        });
+    }
+
     // Clear log confirmation
     document.querySelectorAll('.freelog-clear-form').forEach(function (form) {
         form.addEventListener('submit', function (e) {
-            if (!confirm('Are you sure you want to clear this log file? This cannot be undone.')) {
+            if (!confirm(Craft.t('freelog', 'Are you sure you want to clear this log file? This cannot be undone.'))) {
                 e.preventDefault();
             }
         });

@@ -1,8 +1,11 @@
 {% extends '_layouts/cp.twig' %}
 
 {% do view.registerAssetBundle('justinholtweb\\freelog\\assetbundles\\FreelogAsset') %}
+{% do view.registerTranslations('freelog', [
+    'Are you sure you want to clear this log file? This cannot be undone.',
+]) %}
 
-{% set title = 'Freelog' %}
+{% set title = 'Freelog'|t('freelog') %}
 
 {% block content %}
     {% if files|length %}
@@ -10,35 +13,35 @@
             <table class="data fullwidth">
                 <thead>
                     <tr>
-                        <th>File</th>
-                        <th>Size</th>
-                        <th>Last Modified</th>
-                        <th></th>
+                        <th scope="col">{{ 'File'|t('freelog') }}</th>
+                        <th scope="col">{{ 'Size'|t('freelog') }}</th>
+                        <th scope="col">{{ 'Last modified'|t('freelog') }}</th>
+                        <th scope="col"><span class="visually-hidden">{{ 'Actions'|t('freelog') }}</span></th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for file in files %}
                         <tr>
                             <td>
-                                <a class="file-name" href="{{ cpUrl('freelog/view', { file: file.name }) }}">
-                                    {{ file.name }}
-                                </a>
+                                <a class="file-name" href="{{ cpUrl('freelog/view', { file: file.name }) }}">{{ file.name }}</a>
                                 {% if file.compressed %}
-                                    <span class="freelog-badge" title="Gzip-compressed; decompressed on read">gz</span>
+                                    <span class="freelog-badge" title="{{ 'Gzip-compressed; decompressed on read'|t('freelog') }}">gz</span>
                                 {% endif %}
                             </td>
                             <td class="freelog-file-meta">{{ file.sizeFormatted }}</td>
                             <td class="freelog-file-meta">{{ file.modifiedFormatted }}</td>
-                            <td class="thin" style="white-space: nowrap;">
-                                <div style="display: flex; gap: 4px;">
-                                    <a href="{{ cpUrl('freelog/view', { file: file.name }) }}" class="btn small" title="View">View</a>
-                                    <a href="{{ cpUrl('freelog/download', { file: file.name }) }}" class="btn small" title="Download">Download</a>
-                                    <form method="post" class="freelog-clear-form" style="display: inline;">
-                                        {{ csrfInput() }}
-                                        {{ actionInput('freelog/logs/clear') }}
-                                        {{ hiddenInput('file', file.name) }}
-                                        <button type="submit" class="btn small secondary" title="Clear">Clear</button>
-                                    </form>
+                            <td class="thin freelog-file-actions">
+                                <div class="flex flex-nowrap">
+                                    <a href="{{ cpUrl('freelog/view', { file: file.name }) }}" class="btn small">{{ 'View'|t('freelog') }}</a>
+                                    <a href="{{ cpUrl('freelog/download', { file: file.name }) }}" class="btn small">{{ 'Download'|t('freelog') }}</a>
+                                    {% if canClear %}
+                                        <form method="post" class="freelog-clear-form">
+                                            {{ csrfInput() }}
+                                            {{ actionInput('freelog/logs/clear') }}
+                                            {{ hiddenInput('file', file.name) }}
+                                            <button type="submit" class="btn small secondary">{{ 'Clear'|t('freelog') }}</button>
+                                        </form>
+                                    {% endif %}
                                 </div>
                             </td>
                         </tr>
@@ -48,7 +51,7 @@
         </div>
     {% else %}
         <div class="freelog-empty">
-            <p>No log files found.</p>
+            <p>{{ 'No log files found.'|t('freelog') }}</p>
         </div>
     {% endif %}
 {% endblock %}

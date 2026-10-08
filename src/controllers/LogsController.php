@@ -24,7 +24,7 @@ class LogsController extends Controller
             return false;
         }
 
-        $this->requirePermission('freelog:access');
+        $this->requirePermission(Plugin::PERMISSION_VIEW);
 
         return true;
     }
@@ -46,6 +46,7 @@ class LogsController extends Controller
 
         return $this->renderTemplate('freelog/index', [
             'files' => $files,
+            'canClear' => $this->canClear(),
         ]);
     }
 
@@ -88,6 +89,7 @@ class LogsController extends Controller
             'totalPages' => $totalPages,
             'limit' => $limit,
             'files' => $files,
+            'canClear' => $this->canClear(),
         ]);
     }
 
@@ -117,19 +119,28 @@ class LogsController extends Controller
     public function actionClear(): Response
     {
         $this->requirePostRequest();
+        $this->requirePermission(Plugin::PERMISSION_CLEAR);
 
-        $filename = $this->request->getBodyParam('file');
+        $filename = (string)$this->request->getBodyParam('file');
 
-        if (!$filename) {
+        if ($filename === '') {
             throw new NotFoundHttpException('Log file not specified.');
         }
 
-        $session = Craft::$app->getSession();
+        $logService = $this->logService();
+        $filepath = $logService->resolveFilePath($filename);
 
-        if ($this->logService()->clearLog($filename)) {
-            $session->setNotice("Log file \"$filename\" cleared.");
+        if ($filepath === null) {
+            throw new NotFoundHttpException('Log file not found.');
+        }
+
+        // The name in the notice is the file's own, not what was posted.
+        $name = basename($filepath);
+
+        if ($logService->clearLog($name)) {
+            $this->setSuccessFlash(Craft::t('freelog', 'Cleared {file}.', ['file' => $name]));
         } else {
-            $session->setError("Could not clear \"$filename\".");
+            $this->setFailFlash(Craft::t('freelog', 'Couldn’t clear {file}.', ['file' => $name]));
         }
 
         return $this->redirect('freelog');
@@ -151,6 +162,11 @@ class LogsController extends Controller
         return $this->asJson([
             'content' => $this->logService()->getTail($filename),
         ]);
+    }
+
+    private function canClear(): bool
+    {
+        return Craft::$app->getUser()->checkPermission(Plugin::PERMISSION_CLEAR);
     }
 
     /**

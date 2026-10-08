@@ -2,6 +2,7 @@
 
 namespace justinholtweb\freelog;
 
+use Craft;
 use craft\base\Plugin as BasePlugin;
 use craft\events\RegisterUrlRulesEvent;
 use craft\events\RegisterUserPermissionsEvent;
@@ -17,6 +18,10 @@ use yii\base\Event;
  */
 class Plugin extends BasePlugin
 {
+    /** Kept from 1.x/5.0 so existing grants still work; it now means view and download only. */
+    public const PERMISSION_VIEW = 'freelog:access';
+    public const PERMISSION_CLEAR = 'freelog:clear';
+
     public string $schemaVersion = '1.0.0';
     public bool $hasCpSection = true;
     public bool $hasCpSettings = false;
@@ -53,11 +58,21 @@ class Plugin extends BasePlugin
             UserPermissions::class,
             UserPermissions::EVENT_REGISTER_PERMISSIONS,
             function(RegisterUserPermissionsEvent $event) {
+                // Reading and clearing are separate. Logs hold request parameters, email addresses
+                // and stack traces, so viewing them is close to admin-grade on its own — and
+                // clearing one erases the record of what happened, which is a different trust.
+                // Until 5.0.5 the one permission did both.
                 $event->permissions[] = [
-                    'heading' => 'Freelog',
+                    'heading' => Craft::t('freelog', 'Freelog'),
                     'permissions' => [
-                        'freelog:access' => [
-                            'label' => 'Access Freelog',
+                        self::PERMISSION_VIEW => [
+                            'label' => Craft::t('freelog', 'View logs'),
+                            'warning' => Craft::t('freelog', 'Logs can contain request data, email addresses and stack traces.'),
+                            'nested' => [
+                                self::PERMISSION_CLEAR => [
+                                    'label' => Craft::t('freelog', 'Clear logs'),
+                                ],
+                            ],
                         ],
                     ],
                 ];
@@ -87,7 +102,7 @@ class Plugin extends BasePlugin
             return null;
         }
 
-        $navItem['label'] = 'Freelog';
+        $navItem['label'] = Craft::t('freelog', 'Freelog');
 
         return $navItem;
     }

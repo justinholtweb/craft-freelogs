@@ -2,6 +2,7 @@
 
 namespace justinholtweb\freelog\tests;
 
+use justinholtweb\freelog\services\LogService;
 use PHPUnit\Framework\TestCase;
 
 class LogServiceTest extends TestCase
@@ -290,6 +291,30 @@ class LogServiceTest extends TestCase
         self::assertSame('0123456789', $this->service->getTail('tail.log', 100));
     }
 
+    public function testGetTailStartsAtAWholeLine(): void
+    {
+        $this->write('lines.log', "first line\nsecond line\nthird line\n");
+        // 16 bytes reaches back into "second line"; the partial line is dropped.
+        self::assertSame("third line\n", $this->service->getTail('lines.log', 16));
+    }
+
+    public function testGetTailNeverReturnsABrokenCharacter(): void
+    {
+        // "é" is two bytes; a byte-offset cut through it made the JSON response fail.
+        $this->write('utf8.log', "café crème\ncafé crème\n");
+        foreach (range(1, 22) as $bytes) {
+            $tail = $this->service->getTail('utf8.log', $bytes);
+            self::assertTrue(mb_check_encoding($tail, 'UTF-8'), "cut at $bytes bytes");
+            self::assertNotFalse(json_encode($tail), "cut at $bytes bytes");
+        }
+    }
+
+    public function testGetTailScrubsInvalidBytesFromTheLog(): void
+    {
+        $this->write('binary.log', "ok\n\xff\xfe binary\n");
+        self::assertTrue(mb_check_encoding($this->service->getTail('binary.log'), 'UTF-8'));
+    }
+
     public function testGetTailOfEmptyFile(): void
     {
         $this->write('empty.log', '');
@@ -371,5 +396,167 @@ class LogServiceTest extends TestCase
     {
         mkdir($this->logsDir . '/adir.log');
         self::assertNull($this->service->resolveFilePath('adir.log'));
+    }
+
+    public function testResolveFilePathRejectsFilesWithoutALogExtension(): void
+    {
+        // Anything else living in the logs dir — a dump, a config backup, a .gitignore — is not a
+        // log, and view, download and clear must not reach it. Until 5.0.5 only the listing
+        // filtered on the extension.
+        $this->write('.gitignore', '*');
+        $this->write('dump.sql', 'DROP TABLE x;');
+        $this->write('web.log.bak', 'x');
+
+        self::assertNull($this->service->resolveFilePath('.gitignore'));
+        self::assertNull($this->service->resolveFilePath('dump.sql'));
+        self::assertNull($this->service->resolveFilePath('web.log.bak'));
+    }
+
+    public function testResolveFilePathStillAcceptsRotatedAndCompressedLogs(): void
+    {
+        foreach (['web.log', 'notes.txt', 'web.log.1', 'web.log.2.gz', 'web.log-20260325.gz'] as $name) {
+            $this->write($name, 'x');
+            self::assertNotNull($this->service->resolveFilePath($name), $name);
+        }
+    }
+
+    public function testClearLogRefusesFilesWithoutALogExtension(): void
+    {
+        $path = $this->write('keep.json', '{"keep":true}');
+
+        self::assertFalse($this->service->clearLog('keep.json'));
+        self::assertSame('{"keep":true}', file_get_contents($path));
+    }
+
+    public function testResolveFilePathRejectsASymlinkOutOfTheLogsDir(): void
+    {
+        $outside = $this->logsDir . '-outside.log';
+        file_put_contents($outside, 'not a log of ours');
+        symlink($outside, $this->logsDir . '/escape.log');
+
+        try {
+            self::assertNull($this->service->resolveFilePath('escape.log'));
+            self::assertFalse($this->service->clearLog('escape.log'));
+            self::assertSame('not a log of ours', file_get_contents($outside));
+        } finally {
+            unlink($this->logsDir . '/escape.log');
+            unlink($outside);
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Streaming — large files
+    // ---------------------------------------------------------------------
+
+    /** @param int $count entries, one second apart, messages "entry 0" … "entry N-1" */
+    private function writeEntries(string $name, int $count, string $level = 'INFO'): void
+    {
+        $lines = '';
+        for ($i = 0; $i < $count; $i++) {
+            $lines .= date('Y-m-d H:i:s', 1767225600 + $i) . " [web.$level] [application] entry $i\n";
+        }
+        $this->write($name, $lines);
+    }
+
+    public function testNearAndDeepPagesAgreeAcrossThePassBoundary(): void
+    {
+        // More entries than the single-pass window, so the last pages go through the two-pass path.
+        $count = LogService::SINGLE_PASS_WINDOW + 500;
+        $this->writeEntries('many.log', $count);
+
+        foreach ([0, 1950, 1999, 2000, 2001, 2450, $count - 1, $count] as $offset) {
+            $result = $this->service->getLogEntries('many.log', null, null, 50, $offset);
+            $expected = [];
+            for ($k = $offset; $k < min($offset + 50, $count); $k++) {
+                $expected[] = 'entry ' . ($count - 1 - $k);
+            }
+
+            self::assertSame($count, $result['total'], "offset $offset");
+            self::assertSame($expected, array_column($result['entries'], 'message'), "offset $offset");
+        }
+    }
+
+    public function testDeepPageWithAFilterCountsOnlyMatches(): void
+    {
+        $count = LogService::SINGLE_PASS_WINDOW * 2;
+        $this->writeEntries('filtered.log', $count);
+
+        // "entry 1…" matches 1, 10-19, 100-199, 1000-1999 → 1111 entries.
+        $result = $this->service->getLogEntries('filtered.log', 'entry 1', null, 10, 1105);
+
+        self::assertSame(1111, $result['total']);
+        // Offset 1105 of 1111 leaves the six oldest matches, newest first.
+        self::assertSame(['entry 14', 'entry 13', 'entry 12', 'entry 11', 'entry 10', 'entry 1'], array_column($result['entries'], 'message'));
+    }
+
+    public function testARunawayMessageIsCappedNotHeldWhole(): void
+    {
+        $this->write('dump.log', "2026-04-03 11:52:11 [web.ERROR] [application] dump\n"
+            . str_repeat(str_repeat('y', 1000) . "\n", 500)
+            . "2026-04-03 11:52:12 [web.INFO] [application] after\n");
+
+        $result = $this->service->getLogEntries('dump.log');
+
+        self::assertSame(2, $result['total']);
+        self::assertSame('after', $result['entries'][0]['message']);
+        self::assertLessThanOrEqual(LogService::MAX_MESSAGE_BYTES + strlen(LogService::TRUNCATED), strlen($result['entries'][1]['message']));
+        self::assertStringEndsWith(LogService::TRUNCATED, $result['entries'][1]['message']);
+    }
+
+    public function testAnOverlongLineIsNotMistakenForANewEntry(): void
+    {
+        // A single physical line longer than a read chunk arrives in pieces; a piece that happens
+        // to begin like a timestamp is still part of the same line.
+        $padding = str_repeat('z', LogService::READ_CHUNK - 1 - strlen('2026-04-03 11:52:11 [web.INFO] [application] '));
+        $this->write('long.log', '2026-04-03 11:52:11 [web.INFO] [application] ' . $padding
+            . "2026-04-03 11:52:12 [web.ERROR] [application] not a new entry\n");
+
+        $result = $this->service->getLogEntries('long.log');
+
+        self::assertSame(1, $result['total']);
+        self::assertSame('info', $result['entries'][0]['level']);
+    }
+
+    public function testCompressedTailIsStreamed(): void
+    {
+        $this->writeEntries('rotated.log', 5000);
+        $this->write('rotated.log.1.gz', gzencode((string)file_get_contents($this->logsDir . '/rotated.log')));
+
+        $tail = $this->service->getTail('rotated.log.1.gz', 200);
+
+        self::assertStringEndsWith("entry 4999\n", $tail);
+        self::assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2} /', $tail, 'starts at a whole line');
+        self::assertLessThanOrEqual(200, strlen($tail));
+    }
+
+    public function testMemoryFollowsThePageNotTheFile(): void
+    {
+        // ~30 MB of log. Reading it whole — as 5.0.4 and earlier did — costs at least the file's
+        // size again in memory; streaming costs about a page. 8 MB of headroom tells them apart.
+        $handle = fopen($this->logsDir . '/large.log', 'w');
+        $trace = str_repeat("#0 /var/www/html/vendor/yiisoft/yii2/base/Module.php(552): runAction()\n", 4);
+        for ($i = 0; ftell($handle) < 30 * 1024 * 1024; $i++) {
+            fwrite($handle, '2026-01-01 00:00:00 [web.INFO] [application] request ' . $i . ' ' . str_repeat('.', 80) . "\n" . ($i % 5 === 0 ? $trace : ''));
+        }
+        fclose($handle);
+        file_put_contents($this->logsDir . '/large.log.1.gz', gzencode((string)file_get_contents($this->logsDir . '/large.log'), 1));
+        gc_collect_cycles();
+
+        $calls = [
+            'first page' => fn() => $this->service->getLogEntries('large.log'),
+            'deep page (two passes)' => fn() => $this->service->getLogEntries('large.log', null, null, 50, 100000),
+            'search' => fn() => $this->service->getLogEntries('large.log', 'request 12345 '),
+            'compressed page' => fn() => $this->service->getLogEntries('large.log.1.gz'),
+            'compressed tail' => fn() => $this->service->getTail('large.log.1.gz'),
+        ];
+
+        foreach ($calls as $label => $call) {
+            $before = memory_get_usage();
+            memory_reset_peak_usage();
+            $call();
+            $grew = memory_get_peak_usage() - $before;
+
+            self::assertLessThan(8 * 1024 * 1024, $grew, sprintf('%s grew memory by %.1f MB', $label, $grew / 1048576));
+        }
     }
 }

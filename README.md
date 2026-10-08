@@ -31,9 +31,18 @@ Then install the plugin from the Craft control panel under **Settings > Plugins*
 php craft plugin/install freelog
 ```
 
+## Large log files
+
+Logs are read as a stream and only the page being shown is held in memory, so a multi-hundred-megabyte log opens in a few megabytes of RAM. Each view still reads through the whole file to count its entries — about 1.5 seconds per 300 MB, and roughly twice that with a search. A single entry longer than 64 KB is cut short in the viewer; download the file to see all of it.
+
 ## Permissions
 
-Freelog adds an **Access Freelog** permission under user/group settings. Only users with this permission (or admins) can access the log viewer.
+Freelog adds two permissions under user/group settings:
+
+- **View logs** — open, search, download and tail log files. Logs hold request data, email addresses and stack traces, so treat this as close to admin-level access.
+- **Clear logs** (nested under View logs) — empty a log file.
+
+Admins have both. Before 5.0.5 a single **Access Freelog** permission did both jobs; it is now View logs, so grant Clear logs to anyone who should still be able to clear.
 
 ## Usage
 

@@ -8,94 +8,47 @@
     margin-bottom: 16px;
 }
 
-.freelog-toolbar .search-container {
+.freelog-toolbar-search {
     flex: 1;
     min-width: 200px;
 }
 
-.freelog-toolbar .search-container input {
-    width: 100%;
-}
-
-.freelog-file-list .file-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--gray-200);
-    transition: background-color 0.15s;
-}
-
-.freelog-file-list .file-row:hover {
-    background-color: var(--gray-050);
-}
-
-.freelog-file-list .file-info {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex: 1;
-    min-width: 0;
-}
-
 .freelog-file-list .file-name {
     font-weight: 600;
-    color: var(--link-color);
-    text-decoration: none;
-    overflow: hidden;
-    text-overflow: ellipsis;
+}
+
+.freelog-file-meta {
+    color: var(--light-text-color);
     white-space: nowrap;
 }
 
-.freelog-file-list .file-name:hover {
-    text-decoration: underline;
-}
-
-.freelog-file-list .file-meta {
-    color: var(--gray-500);
-    font-size: 12px;
+.freelog-file-actions {
     white-space: nowrap;
 }
 
-.freelog-file-list .file-actions {
-    display: flex;
-    gap: 6px;
-    align-items: center;
+.freelog-file-actions .flex {
+    gap: 4px;
 }
 
-/* Log entries table */
-.freelog-entries {
-    font-family: 'SF Mono', 'Monaco', 'Menlo', 'Consolas', monospace;
-    font-size: 12px;
-    line-height: 1.5;
-    overflow: hidden;
+.freelog-clear-form {
+    display: inline;
 }
 
-.freelog-entries table {
-    width: 100%;
-    border-collapse: collapse;
+/* Log entries: Craft's data table, with monospaced cells and fixed columns. */
+.freelog-entries table.data {
     table-layout: fixed;
 }
 
-
-.freelog-entries th {
-    text-align: left;
-    padding: 8px 12px;
-    font-weight: 600;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--gray-500);
-    border-bottom: 2px solid var(--gray-200);
-    white-space: nowrap;
-    font-family: system-ui, -apple-system, sans-serif;
-}
-
 .freelog-entries td {
-    padding: 6px 12px;
-    border-bottom: 1px solid var(--gray-100);
+    font-family: SFMono-Regular, Consolas, 'Liberation Mono', Menlo, Courier, monospace; /* Craft's own code stack */
+    font-size: 12px;
+    line-height: 1.5;
     vertical-align: top;
 }
+
+.freelog-entries th.col-date { width: 140px; }
+.freelog-entries th.col-level { width: 90px; }
+.freelog-entries th.col-category { width: 160px; }
 
 .freelog-entries .col-date {
     white-space: nowrap;
@@ -118,8 +71,8 @@
     overflow: hidden;
 }
 
-.freelog-entries tr:hover td {
-    background-color: var(--gray-050);
+.freelog-entries tr[data-expandable] {
+    cursor: pointer;
 }
 
 .freelog-entries tr.expanded td {
@@ -160,7 +113,6 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.03em;
-    font-family: system-ui, -apple-system, sans-serif;
 }
 
 .freelog-level-emergency,
@@ -202,7 +154,7 @@
 }
 
 .freelog-pagination .page-info {
-    color: var(--gray-500);
+    color: var(--light-text-color);
     font-size: 13px;
 }
 
@@ -216,14 +168,19 @@
     background-color: var(--gray-900);
     color: var(--gray-100);
     padding: 16px;
-    border-radius: 4px;
-    font-family: 'SF Mono', 'Monaco', 'Menlo', 'Consolas', monospace;
+    border-radius: var(--large-border-radius);
+    font-family: SFMono-Regular, Consolas, 'Liberation Mono', Menlo, Courier, monospace; /* Craft's own code stack */
     font-size: 12px;
     line-height: 1.6;
     white-space: pre-wrap;
     word-break: break-word;
     max-height: 600px;
     overflow-y: auto;
+}
+
+/* Shown by the auto-refresh button. */
+.freelog-tail[hidden] {
+    display: none;
 }
 
 .freelog-tail-controls {
@@ -262,7 +219,7 @@
 .freelog-empty {
     text-align: center;
     padding: 48px 24px;
-    color: var(--gray-400);
+    color: var(--light-text-color);
 }
 
 .freelog-empty p {
@@ -282,7 +239,7 @@
     padding: 6px 12px;
     color: var(--text-color);
     text-decoration: none;
-    border-radius: 4px;
+    border-radius: var(--small-border-radius);
     font-size: 13px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -309,6 +266,6 @@
     letter-spacing: 0.5px;
     color: var(--medium-text-color);
     background-color: var(--gray-100);
-    border-radius: 3px;
+    border-radius: var(--small-border-radius);
     vertical-align: middle;
 }

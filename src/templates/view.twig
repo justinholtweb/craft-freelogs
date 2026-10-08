@@ -1,20 +1,36 @@
 {% extends '_layouts/cp.twig' %}
+{% import '_includes/forms' as forms %}
 
 {% do view.registerAssetBundle('justinholtweb\\freelog\\assetbundles\\FreelogAsset') %}
+{% do view.registerTranslations('freelog', [
+    'Start auto-refresh',
+    'Stop auto-refresh',
+]) %}
 
 {% set title = filename %}
 
 {% set crumbs = [
-    { label: 'Freelog', url: cpUrl('freelog') }
+    { label: 'Freelog'|t('freelog'), url: cpUrl('freelog') }
 ] %}
 
+{% set levels = {
+    emergency: 'Emergency'|t('freelog'),
+    alert: 'Alert'|t('freelog'),
+    critical: 'Critical'|t('freelog'),
+    error: 'Error'|t('freelog'),
+    warning: 'Warning'|t('freelog'),
+    notice: 'Notice'|t('freelog'),
+    info: 'Info'|t('freelog'),
+    debug: 'Debug'|t('freelog'),
+} %}
+
 {% block sidebar %}
-    <nav>
-        <h6 class="heading">Log Files</h6>
+    <nav aria-label="{{ 'Log files'|t('freelog') }}">
+        <h6 class="heading">{{ 'Log files'|t('freelog') }}</h6>
         <ul class="freelog-sidebar-files">
             {% for file in files %}
                 <li class="{{ file.name == filename ? 'active' }}">
-                    <a href="{{ cpUrl('freelog/view', { file: file.name }) }}">
+                    <a href="{{ cpUrl('freelog/view', { file: file.name }) }}" {{ file.name == filename ? 'aria-current="page"' }}>
                         {{ file.name }}
                         {% if file.compressed %}<span class="freelog-badge">gz</span>{% endif %}
                     </a>
@@ -26,51 +42,52 @@
 
 {% block content %}
     {# Toolbar: search, filter, actions #}
-    <form method="get" action="{{ cpUrl('freelog/view') }}">
+    <form method="get" action="{{ cpUrl('freelog/view') }}" id="freelog-filter">
         {{ hiddenInput('file', filename) }}
         <div class="freelog-toolbar">
-            <div class="search-container">
-                <input type="text" class="text fullwidth" name="search" value="{{ search }}" placeholder="Search log entries...">
+            <div class="freelog-toolbar-search">
+                {{ forms.text({
+                    id: 'freelog-search',
+                    name: 'search',
+                    type: 'search',
+                    value: search,
+                    placeholder: 'Search log entries'|t('freelog'),
+                    class: 'fullwidth',
+                    inputAttributes: { aria: { label: 'Search log entries'|t('freelog') } },
+                }) }}
             </div>
-            <div>
-                <select name="level" class="text" onchange="this.form.submit()">
-                    <option value="">All Levels</option>
-                    {% for lvl in ['emergency', 'alert', 'critical', 'error', 'warning', 'notice', 'info', 'debug'] %}
-                        <option value="{{ lvl }}" {{ level == lvl ? 'selected' }}>{{ lvl|capitalize }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <button type="submit" class="btn submit">Filter</button>
-            <a href="{{ cpUrl('freelog/download', { file: filename }) }}" class="btn">Download</a>
+            {{ forms.select({
+                id: 'freelog-level',
+                name: 'level',
+                value: level,
+                options: [{ label: 'All levels'|t('freelog'), value: '' }]|merge(levels|map((label, value) => { label: label, value: value })|values),
+                inputAttributes: { aria: { label: 'Level'|t('freelog') } },
+            }) }}
+            <button type="submit" class="btn submit">{{ 'Filter'|t('freelog') }}</button>
+            <a href="{{ cpUrl('freelog/download', { file: filename }) }}" class="btn">{{ 'Download'|t('freelog') }}</a>
         </div>
     </form>
 
     {# Tail / live refresh section #}
     <div class="freelog-tail-controls">
-        <button id="freelog-tail-toggle" class="btn small submit">Start Auto-Refresh</button>
+        <button type="button" id="freelog-tail-toggle" class="btn small submit" aria-controls="freelog-tail-content" aria-expanded="false">{{ 'Start auto-refresh'|t('freelog') }}</button>
         <span id="freelog-tail-status" class="freelog-tail-status">
             <span class="dot"></span>
-            Auto-refresh
+            {{ 'Auto-refresh'|t('freelog') }}
         </span>
     </div>
-    <div id="freelog-tail-content" class="freelog-tail" data-file="{{ filename }}" style="display: none;"></div>
+    <div id="freelog-tail-content" class="freelog-tail" data-file="{{ filename }}" aria-live="polite" hidden></div>
 
     {# Parsed entries table #}
     {% if entries|length %}
         <div class="freelog-entries">
-            <table>
-                <colgroup>
-                    <col style="width: 140px;">
-                    <col style="width: 72px;">
-                    <col style="width: 160px;">
-                    <col>
-                </colgroup>
+            <table class="data fullwidth">
                 <thead>
                     <tr>
-                        <th>Date</th>
-                        <th>Level</th>
-                        <th>Category</th>
-                        <th>Message</th>
+                        <th scope="col" class="col-date">{{ 'Date'|t('freelog') }}</th>
+                        <th scope="col" class="col-level">{{ 'Level'|t('freelog') }}</th>
+                        <th scope="col" class="col-category">{{ 'Category'|t('freelog') }}</th>
+                        <th scope="col">{{ 'Message'|t('freelog') }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -78,7 +95,7 @@
                         <tr data-expandable>
                             <td class="col-date">{{ entry.date }}</td>
                             <td class="col-level">
-                                <span class="freelog-level freelog-level-{{ entry.level|lower }}">{{ entry.level }}</span>
+                                <span class="freelog-level freelog-level-{{ entry.level|lower }}">{{ levels[entry.level|lower] ?? entry.level }}</span>
                             </td>
                             <td class="col-category" title="{{ entry.category }}">{{ entry.category }}</td>
                             <td class="col-message">
@@ -95,14 +112,18 @@
         {% if totalPages > 1 %}
             <div class="freelog-pagination">
                 <span class="page-info">
-                    Showing {{ ((page - 1) * limit) + 1 }}–{{ min(page * limit, total) }} of {{ total }} entries
+                    {{ 'Showing {first}–{last} of {total} entries'|t('freelog', {
+                        first: ((page - 1) * limit) + 1,
+                        last: min(page * limit, total),
+                        total: total,
+                    }) }}
                 </span>
                 <div class="page-links">
                     {% if page > 1 %}
-                        <a href="{{ cpUrl('freelog/view', { file: filename, search: search, level: level, page: page - 1 }) }}" class="btn small">&laquo; Prev</a>
+                        <a href="{{ cpUrl('freelog/view', { file: filename, search: search, level: level, page: page - 1 }) }}" class="btn small">{{ 'Previous'|t('freelog') }}</a>
                     {% endif %}
                     {% if page < totalPages %}
-                        <a href="{{ cpUrl('freelog/view', { file: filename, search: search, level: level, page: page + 1 }) }}" class="btn small">Next &raquo;</a>
+                        <a href="{{ cpUrl('freelog/view', { file: filename, search: search, level: level, page: page + 1 }) }}" class="btn small">{{ 'Next'|t('freelog') }}</a>
                     {% endif %}
                 </div>
             </div>
@@ -111,9 +132,9 @@
         <div class="freelog-empty">
             <p>
                 {% if search or level %}
-                    No entries match your filters.
+                    {{ 'No entries match your filters.'|t('freelog') }}
                 {% else %}
-                    This log file is empty or could not be parsed.
+                    {{ 'This log file is empty or could not be parsed.'|t('freelog') }}
                 {% endif %}
             </p>
         </div>
