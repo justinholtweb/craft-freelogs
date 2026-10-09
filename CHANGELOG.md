@@ -1,7 +1,6 @@
 # Changelog
 
-## Unreleased
-
+## 5.1.0 - 2026-10-09
 ### Added
 
 - **Error digest by email.** Once a day or once a week, Freelog emails the errors written to your logs since the last digest, grouped by kind with a count and a link to each log. Set it up under **Freelog → Settings**: schedule, recipients (or an environment variable), levels, and whether to leave out 4xx HTTP errors (on by default). Send it from cron with `php craft freelog/digest/send`, or let the end of a web request queue it when it's due; `freelog/digest/status` shows the schedule, and **Send a test digest now** shows what the next one would say without using it up.

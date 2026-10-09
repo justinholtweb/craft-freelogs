@@ -2,7 +2,7 @@
     "name": "justinholtweb/craft-freelog",
     "description": "View, search, filter, and download server logs from the Craft CMS control panel.",
     "type": "craft-plugin",
-    "version": "5.0.5",
+    "version": "5.1.0",
     "keywords": [
         "craft",
         "cms",
