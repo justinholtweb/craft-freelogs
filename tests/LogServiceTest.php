@@ -559,4 +559,59 @@ class LogServiceTest extends TestCase
             self::assertLessThan(8 * 1024 * 1024, $grew, sprintf('%s grew memory by %.1f MB', $label, $grew / 1048576));
         }
     }
+
+    // ---------------------------------------------------------------------
+    // entriesSince (the error digest's reader)
+    // ---------------------------------------------------------------------
+
+    public function testEntriesSinceReadsOnlyWhatFollowsThePosition(): void
+    {
+        $first = "2026-10-09 08:00:00 [web.ERROR] [application] one\n#0 trace line\n";
+        $this->write('web.log', $first . "2026-10-09 08:01:00 [web.ERROR] [application] two\n");
+
+        $all = $this->service->entriesSince('web.log', 0);
+        $messages = array_column(iterator_to_array($all, false), 'message');
+        self::assertSame(["one\n#0 trace line", 'two'], $messages);
+        $end = $all->getReturn();
+        self::assertSame(filesize($this->logsDir . '/web.log'), $end);
+
+        $rest = $this->service->entriesSince('web.log', strlen($first));
+        self::assertSame(['two'], array_column(iterator_to_array($rest, false), 'message'));
+
+        $none = $this->service->entriesSince('web.log', $end);
+        self::assertSame([], iterator_to_array($none, false));
+        self::assertSame($end, $none->getReturn());
+    }
+
+    public function testEntriesSinceLeavesALineStillBeingWritten(): void
+    {
+        $whole = "2026-10-09 08:00:00 [web.ERROR] [application] whole\n";
+        $this->write('web.log', $whole . '2026-10-09 08:00:01 [web.ERROR] [application] half-writ');
+
+        $entries = $this->service->entriesSince('web.log', 0);
+        self::assertSame(['whole'], array_column(iterator_to_array($entries, false), 'message'));
+        self::assertSame(strlen($whole), $entries->getReturn(), 'The unfinished line is read next time, whole.');
+    }
+
+    public function testEntriesSinceRefusesCompressedAndUnlistedFiles(): void
+    {
+        $this->write('web.log.1.gz', (string)gzencode("2026-10-09 08:00:00 [web.ERROR] [application] old\n"));
+        $this->write('secrets.bak', "2026-10-09 08:00:00 [web.ERROR] [application] nope\n");
+
+        foreach (['web.log.1.gz', 'secrets.bak', '../web.log'] as $name) {
+            $entries = $this->service->entriesSince($name, 0);
+            self::assertSame([], iterator_to_array($entries, false), $name);
+            self::assertSame(0, $entries->getReturn(), $name);
+        }
+    }
+
+    public function testRotatedNames(): void
+    {
+        self::assertFalse($this->service->isRotated('web.log'));
+        self::assertFalse($this->service->isRotated('web-2026-10-09.log'));
+        self::assertFalse($this->service->isRotated('formie.txt'));
+        self::assertTrue($this->service->isRotated('web.log.1'));
+        self::assertTrue($this->service->isRotated('web.log-20261009'));
+        self::assertTrue($this->service->isRotated('web.log.2.gz'));
+    }
 }

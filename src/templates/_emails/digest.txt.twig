@@ -1,0 +1,37 @@
+{%- autoescape false -%}
+{% if isTest %}{{ 'This is a test. It shows what the next digest would say; the real one will still go out on schedule and report the same errors.'|t('freelog') }}
+
+{% endif %}
+{{ 'Log errors on {site}'|t('freelog', { site: siteName }) }}
+{% if since %}{{ 'Written since the last digest, sent {date}.'|t('freelog', { date: since|datetime('short') }) }}{% else %}{{ 'The first digest, so it covers the last day (or week) of each log.'|t('freelog') }}{% endif %}
+
+
+{% if total -%}
+{{ '{count, plural, =1{One new entry} other{# new entries}}'|t('freelog', { count: total }) }}
+{% for level, count in levels %}{{ level|capitalize|t('freelog') }}: {{ count|number }}{% if not loop.last %} · {% endif %}{% endfor %}
+
+
+{% for item in items -%}
+[{{ item.level|upper }}]{% if item.category %} [{{ item.category }}]{% endif %}{% if item.count > 1 %} ×{{ item.count }}{% endif %}
+
+  {{ item.message }}
+{% if item.trace %}{% for line in item.trace|split("\n") %}    {{ line }}
+{% endfor %}{% endif %}
+  {{ item.count > 1 ? 'First {first}, last {last}'|t('freelog', { first: item.firstSeen, last: item.lastSeen }) : item.lastSeen }} · {{ item.files|join(', ') }}
+  {{ item.url }}
+
+{% endfor -%}
+{% if more %}{{ '… and {count} more kinds of error.'|t('freelog', { count: more|number }) }}
+
+{% endif -%}
+{% if ungrouped %}{{ '{count} more entries were counted but not listed.'|t('freelog', { count: ungrouped|number }) }}
+
+{% endif -%}
+{%- else -%}
+{{ 'No new log errors since the last digest.'|t('freelog') }}
+
+{% endif -%}
+{{ 'Open the logs'|t('freelog') }}: {{ logsUrl }}
+
+{% if not includeTraces %}{{ 'Each error is quoted by its first line; stack traces stay on the server.'|t('freelog') }} {% endif %}{{ 'Secrets, email addresses and IP addresses are masked before sending. Change who gets this, or what it reports, in Freelog’s settings:'|t('freelog') }} {{ settingsUrl }}
+{% endautoescape -%}

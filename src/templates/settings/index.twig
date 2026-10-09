@@ -1,0 +1,128 @@
+{% extends '_layouts/cp.twig' %}
+{% import '_includes/forms' as forms %}
+
+{% set title = 'Freelog settings'|t('freelog') %}
+{% set selectedSubnavItem = 'settings' %}
+{% set crumbs = [
+    { label: 'Freelog'|t('freelog'), url: cpUrl('freelog') }
+] %}
+
+{% block content %}
+    {% if readOnly %}
+        <div class="readable">
+            <blockquote class="note warning">
+                {{ 'Admin changes are disabled in this environment, so these are read-only here. Change them on an environment where admin changes are allowed.'|t('freelog') }}
+            </blockquote>
+        </div>
+    {% endif %}
+
+    <form method="post" accept-charset="UTF-8">
+        {{ csrfInput() }}
+        {{ actionInput('freelog/settings/save') }}
+
+        <h2 id="digest">{{ 'Error digest'|t('freelog') }}</h2>
+
+        {{ forms.lightswitchField({
+            label: 'Email an error digest'|t('freelog'),
+            instructions: 'Once a day or once a week, email the errors written to the logs since the last digest, so a broken page is noticed without anybody opening Freelog to look.'|t('freelog'),
+            name: 'settings[digestEnabled]',
+            on: settings.digestEnabled,
+            disabled: readOnly,
+        }) }}
+
+        {{ forms.selectField({
+            label: 'How often'|t('freelog'),
+            name: 'settings[digestFrequency]',
+            value: settings.digestFrequency,
+            options: [
+                { label: 'Daily'|t('freelog'), value: 'daily' },
+                { label: 'Weekly'|t('freelog'), value: 'weekly' },
+            ],
+            disabled: readOnly,
+            errors: settings.getErrors('digestFrequency'),
+        }) }}
+
+        {{ forms.selectField({
+            label: 'Day of the week'|t('freelog'),
+            instructions: 'For a weekly digest.'|t('freelog'),
+            name: 'settings[digestWeekday]',
+            value: settings.digestWeekday,
+            options: weekdayOptions,
+            disabled: readOnly,
+            errors: settings.getErrors('digestWeekday'),
+        }) }}
+
+        {{ forms.selectField({
+            label: 'Hour'|t('freelog'),
+            instructions: 'In the system time zone ({zone}). The digest goes out on the first run at or after this hour, once per day or week.'|t('freelog', { zone: timeZone }),
+            name: 'settings[digestHour]',
+            value: settings.digestHour,
+            options: hourOptions,
+            disabled: readOnly,
+            errors: settings.getErrors('digestHour'),
+        }) }}
+
+        {{ forms.autosuggestField({
+            label: 'Recipients'|t('freelog'),
+            instructions: 'Email addresses, separated by commas, or an environment variable that holds them. The digest quotes log lines — redacted, but still from inside the site — so send it to the people who would read the logs anyway.'|t('freelog'),
+            name: 'settings[digestRecipients]',
+            value: settings.digestRecipients,
+            suggestEnvVars: true,
+            disabled: readOnly,
+            errors: settings.getErrors('digestRecipients'),
+        }) }}
+
+        {{ forms.checkboxGroupField({
+            label: 'Levels to report'|t('freelog'),
+            instructions: 'Nothing ticked means emergency, alert, critical and error.'|t('freelog'),
+            name: 'settings[digestLevels]',
+            options: levelOptions,
+            values: settings.digestLevels,
+            disabled: readOnly,
+            errors: settings.getErrors('digestLevels'),
+        }) }}
+
+        {{ forms.lightswitchField({
+            label: 'Leave out 4xx HTTP errors'|t('freelog'),
+            instructions: 'Craft logs every not-found, forbidden and bad request at error level. On a public site they are most of the error log, and almost none of them are the site’s fault.'|t('freelog'),
+            name: 'settings[digestIgnoreClientErrors]',
+            on: settings.digestIgnoreClientErrors,
+            disabled: readOnly,
+        }) }}
+
+        {{ forms.lightswitchField({
+            label: 'Include stack traces'|t('freelog'),
+            instructions: 'Off, each error is quoted by its first line only. On, the first few lines of its trace go in too — redacted, but traces carry server paths and function arguments, posted values among them.'|t('freelog'),
+            name: 'settings[digestIncludeTraces]',
+            on: settings.digestIncludeTraces,
+            disabled: readOnly,
+            warning: settings.digestIncludeTraces ? 'Stack traces leave the server in every digest.'|t('freelog') : null,
+        }) }}
+
+        {{ forms.lightswitchField({
+            label: 'Send even when there is nothing new'|t('freelog'),
+            instructions: 'Off, a period with no new errors sends nothing. An “all clear” every morning is an email people learn to stop opening.'|t('freelog'),
+            name: 'settings[digestSendWhenEmpty]',
+            on: settings.digestSendWhenEmpty,
+            disabled: readOnly,
+        }) }}
+
+        {{ forms.lightswitchField({
+            label: 'Check from web requests too'|t('freelog'),
+            instructions: 'Best is a cron job running `php craft freelog/digest/send` every 15 minutes. Without one, leave this on: the end of a web request looks at the schedule at most every five minutes and queues the digest when it is due.'|t('freelog'),
+            name: 'settings[digestWebTrigger]',
+            on: settings.digestWebTrigger,
+            disabled: readOnly,
+        }) }}
+
+        {% if not readOnly %}
+            <div class="buttons">
+                <button type="submit" class="btn submit">{{ 'Save'|t('freelog') }}</button>
+            </div>
+        {% endif %}
+    </form>
+
+    {# A form of its own, after the settings form and never inside it: it works with admin
+       changes off, and it sends what is saved, not what is typed above. #}
+    {% include 'freelog/_partials/digest' with { state: digestState, next: digestNext } %}
+{% endblock %}

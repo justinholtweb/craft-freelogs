@@ -6,15 +6,22 @@ use Craft;
 use craft\base\Plugin as BasePlugin;
 use craft\events\RegisterUrlRulesEvent;
 use craft\events\RegisterUserPermissionsEvent;
+use craft\helpers\UrlHelper;
 use craft\services\UserPermissions;
+use craft\web\Application as WebApplication;
 use craft\web\UrlManager;
+use justinholtweb\freelog\models\Settings;
+use justinholtweb\freelog\services\Digest;
 use justinholtweb\freelog\services\LogService;
+use Throwable;
 use yii\base\Event;
 
 /**
  * Freelog plugin for Craft CMS 5.
  *
  * @property-read LogService $logService
+ * @property-read Digest $digest
+ * @method Settings getSettings()
  */
 class Plugin extends BasePlugin
 {
@@ -22,9 +29,11 @@ class Plugin extends BasePlugin
     public const PERMISSION_VIEW = 'freelog:access';
     public const PERMISSION_CLEAR = 'freelog:clear';
 
-    public string $schemaVersion = '1.0.0';
+    public const LOG_CATEGORY = 'freelog';
+
+    public string $schemaVersion = '1.1.0';
     public bool $hasCpSection = true;
-    public bool $hasCpSettings = false;
+    public bool $hasCpSettings = true;
 
     /**
      * @return array<string, mixed>
@@ -34,6 +43,7 @@ class Plugin extends BasePlugin
         return [
             'components' => [
                 'logService' => LogService::class,
+                'digest' => Digest::class,
             ],
         ];
     }
@@ -51,6 +61,7 @@ class Plugin extends BasePlugin
                 $event->rules['freelog/download'] = 'freelog/logs/download';
                 $event->rules['freelog/clear'] = 'freelog/logs/clear';
                 $event->rules['freelog/tail'] = 'freelog/logs/tail';
+                $event->rules['freelog/settings'] = 'freelog/settings/index';
             },
         );
 
@@ -78,6 +89,67 @@ class Plugin extends BasePlugin
                 ];
             },
         );
+
+        if (!Craft::$app->getRequest()->getIsConsoleRequest()) {
+            $this->registerDigestFallback();
+        }
+    }
+
+    /**
+     * The digest's fallback trigger, for sites with no cron job running `freelog/digest/send`.
+     *
+     * At the end of a web request rather than on `Gc::EVENT_RUN`: garbage collection runs on a
+     * dice roll, which makes for a schedule nobody can predict. What runs here is a cache read;
+     * the schedule is consulted at most every five minutes and the work happens in a queue job.
+     */
+    private function registerDigestFallback(): void
+    {
+        $settings = $this->getSettings();
+
+        if (!$settings->digestEnabled || !$settings->digestWebTrigger) {
+            return;
+        }
+
+        Event::on(WebApplication::class, WebApplication::EVENT_AFTER_REQUEST, function() {
+            try {
+                // Before the migration that adds the marker table has run, there is nowhere to
+                // read the schedule from.
+                if (!Craft::$app->getIsInstalled() || Craft::$app->getPlugins()->isPluginUpdatePending($this)) {
+                    return;
+                }
+
+                $this->digest->queueIfDue();
+            } catch (Throwable $e) {
+                Craft::warning('Could not check the digest schedule: ' . $e->getMessage(), self::LOG_CATEGORY);
+            }
+        });
+    }
+
+    /**
+     * The plugin instance, for code that only runs once it is loaded (services, controllers, jobs).
+     */
+    public static function current(): self
+    {
+        $plugin = self::getInstance();
+
+        if (!$plugin instanceof self) {
+            throw new \RuntimeException('Freelog is not loaded.');
+        }
+
+        return $plugin;
+    }
+
+    protected function createSettingsModel(): Settings
+    {
+        return new Settings();
+    }
+
+    public function getSettingsResponse(): mixed
+    {
+        /** @var \craft\web\Response $response */
+        $response = Craft::$app->getResponse();
+
+        return $response->redirect(UrlHelper::cpUrl('freelog/settings'));
     }
 
     /**
@@ -103,6 +175,14 @@ class Plugin extends BasePlugin
         }
 
         $navItem['label'] = Craft::t('freelog', 'Freelog');
+
+        // Settings are admin-only (they choose who receives log contents by email).
+        if (Craft::$app->getUser()->getIsAdmin()) {
+            $navItem['subnav'] = [
+                'logs' => ['label' => Craft::t('freelog', 'Logs'), 'url' => 'freelog'],
+                'settings' => ['label' => Craft::t('freelog', 'Settings'), 'url' => 'freelog/settings'],
+            ];
+        }
 
         return $navItem;
     }

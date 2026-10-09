@@ -289,6 +289,35 @@ class LogService extends Component
     }
 
     /**
+     * The entries of a plain (not gzipped) log written after byte `$from`, oldest first.
+     *
+     * Used by the error digest, which keeps one position per file between runs. Only whole lines
+     * are read — one still being written stays for next time — and the generator returns the
+     * position to start from next time (`$from` itself when nothing could be read).
+     *
+     * @return Generator<int, array{date: string, level: string, category: string, message: string}, mixed, int>
+     */
+    public function entriesSince(string $filename, int $from): Generator
+    {
+        $filepath = $this->resolveFilePath($filename);
+
+        if ($filepath === null || $this->isCompressed($filepath)) {
+            return $from;
+        }
+
+        return yield from $this->_entries($filepath, max(0, $from), true);
+    }
+
+    /**
+     * Whether a log name is a rotated copy (`web.log.1`, `web.log-20261009`) rather than the
+     * file being written to.
+     */
+    public function isRotated(string $filename): bool
+    {
+        return !preg_match('/\.(log|txt)$/i', $filename);
+    }
+
+    /**
      * Returns true if the filename indicates a gzip-compressed log.
      */
     public function isCompressed(string $filename): bool
@@ -371,28 +400,52 @@ class LogService extends Component
      * A line longer than a chunk arrives in pieces; every piece after the first is flagged as a
      * continuation, so it is never mistaken for the start of a new entry.
      *
-     * @return Generator<int, array{string, bool}> [line without its newline, is a continuation]
+     * `$from` starts part-way through a plain file (the digest's saved position). With
+     * `$completeOnly`, a last line with no newline yet — a write still in progress — is left for
+     * the next read. The generator returns the byte position just past the last whole line read.
+     *
+     * @return Generator<int, array{string, bool}, mixed, int> [line without its newline, is a continuation]
      */
-    private function _lines(string $filepath): Generator
+    private function _lines(string $filepath, int $from = 0, bool $completeOnly = false): Generator
     {
         $compressed = $this->isCompressed($filepath);
         $handle = $compressed ? @gzopen($filepath, 'rb') : @fopen($filepath, 'rb');
+        $position = 0;
 
         if ($handle === false) {
-            return;
+            return $from;
         }
 
         try {
+            if ($from > 0) {
+                if ($compressed || fseek($handle, $from) !== 0) {
+                    return $from;
+                }
+
+                $position = $from;
+            }
+
             $continued = false;
 
             while (($chunk = $compressed ? gzgets($handle, self::READ_CHUNK) : fgets($handle, self::READ_CHUNK)) !== false) {
                 $complete = str_ends_with($chunk, "\n");
+
+                if (!$complete && $completeOnly && ($compressed ? gzeof($handle) : feof($handle))) {
+                    break;
+                }
+
                 yield [rtrim($chunk, "\r\n"), $continued];
                 $continued = !$complete;
+
+                if ($complete) {
+                    $position = $compressed ? $position + strlen($chunk) : (int)ftell($handle);
+                }
             }
         } finally {
             $compressed ? gzclose($handle) : fclose($handle);
         }
+
+        return $position;
     }
 
     /**
@@ -403,14 +456,15 @@ class LogService extends Component
      * {@see MAX_MESSAGE_BYTES} — past that its lines are counted, not kept — so one runaway dump
      * can't take the memory back.
      *
-     * @return Generator<int, array{date: string, level: string, category: string, message: string}>
+     * @return Generator<int, array{date: string, level: string, category: string, message: string}, mixed, int>
      */
-    private function _entries(string $filepath): Generator
+    private function _entries(string $filepath, int $from = 0, bool $completeOnly = false): Generator
     {
         $current = null;
         $full = false;
+        $lines = $this->_lines($filepath, $from, $completeOnly);
 
-        foreach ($this->_lines($filepath) as [$line, $continued]) {
+        foreach ($lines as [$line, $continued]) {
             $start = $continued ? null : $this->_parseEntryStart($line);
 
             if ($start !== null) {
@@ -444,6 +498,8 @@ class LogService extends Component
         if ($current !== null) {
             yield $current;
         }
+
+        return $lines->getReturn();
     }
 
     /**

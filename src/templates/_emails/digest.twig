@@ -1,0 +1,80 @@
+{#
+    The error digest, HTML half. Rendered by helpers/Mailer in control-panel template mode.
+    Inline styles on purpose: this is an email, and mail clients drop <style> blocks.
+    Every string from a log arrives already redacted (services/Digest::variables()) and is
+    autoescaped here; never mark one as raw.
+#}
+{% set tones = { emergency: '#cf1124', alert: '#cf1124', critical: '#cf1124', error: '#cf1124', warning: '#b44d12' } %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width">
+    <title>{{ 'Freelog error digest'|t('freelog') }}</title>
+</head>
+<body style="margin:0;padding:24px;background:#f3f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1f2933;font-size:15px;line-height:1.5;">
+<div style="max-width:680px;margin:0 auto;background:#ffffff;border-radius:6px;padding:24px;">
+    {% if isTest %}
+        <p style="margin:0 0 16px;padding:8px 12px;background:#fff8e1;border-radius:4px;font-size:13px;">
+            {{ 'This is a test. It shows what the next digest would say; the real one will still go out on schedule and report the same errors.'|t('freelog') }}
+        </p>
+    {% endif %}
+
+    <h1 style="margin:0 0 4px;font-size:20px;">{{ 'Log errors on {site}'|t('freelog', { site: siteName }) }}</h1>
+    <p style="margin:0 0 20px;color:#606d7b;font-size:13px;">
+        {% if since %}
+            {{ 'Written since the last digest, sent {date}.'|t('freelog', { date: since|datetime('short') }) }}
+        {% else %}
+            {{ 'The first digest, so it covers the last day (or week) of each log.'|t('freelog') }}
+        {% endif %}
+    </p>
+
+    {% if total %}
+        <h2 style="margin:0 0 4px;font-size:16px;">{{ '{count, plural, =1{One new entry} other{# new entries}}'|t('freelog', { count: total }) }}</h2>
+        <p style="margin:0 0 16px;color:#606d7b;font-size:13px;">
+            {% for level, count in levels %}{{ level|capitalize|t('freelog') }}: {{ count|number }}{% if not loop.last %} · {% endif %}{% endfor %}
+            {% if files|length %}<br>{% for file, count in files|slice(0, 5, true) %}{{ file }} ({{ count|number }}){% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
+        </p>
+
+        {% for item in items %}
+            <div style="margin:0 0 14px;padding:0 0 14px;border-bottom:1px solid #e3e5e8;">
+                <div style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:{{ tones[item.level] ?? '#606d7b' }};">
+                    {{ item.level|capitalize|t('freelog') }}{% if item.category %} · <span style="text-transform:none;">{{ item.category }}</span>{% endif %}
+                    {% if item.count > 1 %} · ×{{ item.count|number }}{% endif %}
+                </div>
+                <div style="margin:2px 0;font-family:SFMono-Regular,Consolas,Menlo,monospace;font-size:13px;word-break:break-word;">{{ item.message }}</div>
+                {% if item.trace %}
+                    <pre style="margin:6px 0 0;padding:8px;background:#f3f5f7;border-radius:4px;font-size:12px;white-space:pre-wrap;word-break:break-all;">{{ item.trace }}</pre>
+                {% endif %}
+                <div style="color:#606d7b;font-size:12px;margin-top:4px;">
+                    {% if item.count > 1 %}
+                        {{ 'First {first}, last {last}'|t('freelog', { first: item.firstSeen, last: item.lastSeen }) }}
+                    {% else %}
+                        {{ item.lastSeen }}
+                    {% endif %}
+                    · <a href="{{ item.url }}" style="color:#606d7b;">{{ item.files|join(', ') }}</a>
+                </div>
+            </div>
+        {% endfor %}
+        {% if more %}
+            <p style="margin:0 0 16px;">{{ '… and {count} more kinds of error.'|t('freelog', { count: more|number }) }}</p>
+        {% endif %}
+        {% if ungrouped %}
+            <p style="margin:0 0 16px;">{{ '{count} more entries were counted but not listed.'|t('freelog', { count: ungrouped|number }) }}</p>
+        {% endif %}
+    {% else %}
+        <p style="margin:0 0 16px;">{{ 'No new log errors since the last digest.'|t('freelog') }}</p>
+    {% endif %}
+
+    <p style="margin:16px 0 20px;">
+        <a href="{{ logsUrl }}" style="display:inline-block;padding:8px 14px;background:#1f2933;color:#ffffff;border-radius:4px;text-decoration:none;">{{ 'Open the logs'|t('freelog') }}</a>
+    </p>
+
+    <p style="margin:0;color:#7b8794;font-size:12px;">
+        {% if not includeTraces %}{{ 'Each error is quoted by its first line; stack traces stay on the server.'|t('freelog') }} {% endif %}
+        {{ 'Secrets, email addresses and IP addresses are masked before sending. Change who gets this, or what it reports, in Freelog’s settings:'|t('freelog') }}
+        <a href="{{ settingsUrl }}" style="color:#7b8794;">{{ settingsUrl }}</a>
+    </p>
+</div>
+</body>
+</html>

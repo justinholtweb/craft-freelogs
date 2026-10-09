@@ -1,0 +1,38 @@
+{#
+    The error digest's status and the "Send a test digest now" button.
+    Its own form — included after any other form on the page, never inside one.
+#}
+{% if currentUser.admin %}
+    {% set freelogSettings = craft.app.plugins.getPlugin('freelog').getSettings() %}
+    <hr>
+    <div class="freelog-digest">
+        <h2>{{ 'Send a test'|t('freelog') }}</h2>
+
+        <p class="light">
+            {% if not freelogSettings.digestEnabled %}
+                {{ 'The scheduled digest is switched off. A test still shows what it would say.'|t('freelog') }}
+            {% elseif state.lastSentAt %}
+                {{ 'Last sent {date}.'|t('freelog', { date: state.lastSentAt|datetime('short') }) }}
+            {% else %}
+                {{ 'Not sent yet. The first digest covers the last day (or week) of each log.'|t('freelog') }}
+            {% endif %}
+            {% if next %}
+                {{ 'Next due {date}.'|t('freelog', { date: next|datetime('short') }) }}
+            {% endif %}
+        </p>
+
+        <form method="post" accept-charset="UTF-8">
+            {{ csrfInput() }}
+            {{ actionInput('freelog/digest/send-test') }}
+            {{ redirectInput('freelog/settings') }}
+            <button type="submit" class="btn">{{ 'Send a test digest now'|t('freelog') }}</button>
+        </form>
+        <p class="light smalltext">
+            {% if freelogSettings.recipientList()|length %}
+                {{ 'Goes to the digest’s recipients, marked as a test. It does not count as this period’s digest, and the next one still reports the same errors.'|t('freelog') }}
+            {% else %}
+                {{ 'No recipients are set, so the test comes to you.'|t('freelog') }}
+            {% endif %}
+        </p>
+    </div>
+{% endif %}

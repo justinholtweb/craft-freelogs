@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Error digest by email.** Once a day or once a week, Freelog emails the errors written to your logs since the last digest, grouped by kind with a count and a link to each log. Set it up under **Freelog → Settings**: schedule, recipients (or an environment variable), levels, and whether to leave out 4xx HTTP errors (on by default). Send it from cron with `php craft freelog/digest/send`, or let the end of a web request queue it when it's due; `freelog/digest/status` shows the schedule, and **Send a test digest now** shows what the next one would say without using it up.
+- The digest reads each log from where the last one stopped — a byte position per file, kept through rename and copy-and-truncate rotation, a cleared log, and a line still being written — so nothing is reported twice and nothing is missed. The first digest covers one period back rather than the whole history.
+- Everything the digest quotes is redacted first: this install's own secrets by value, anything shaped like a credential, email addresses (domain kept), the last octet of IP addresses and card-number-shaped digits. Each error is quoted by its first line; stack traces stay out unless an admin turns them on.
+- A **Settings** screen (admins only) and a Logs/Settings subnav for admins.
+
+### Internal
+
+- New `freelog_digests` table (schema 1.1.0) for the digest's marker and read positions.
+- Integration suites `tests/integration/digest.php` (schedule, positions, rotation, redaction, failures, fallback, console) and `digest-http.php` (the test-send endpoint and settings screen: admin-only, POST + CSRF, no nested forms), plus unit tests for the redactor and the digest's log reader.
+
 ## 5.0.5 - 2026-10-08
 
 > {warning} Clearing a log now needs its own **Clear logs** permission, nested under **View logs** (formerly **Access Freelog**). Users and groups that had Access Freelog keep viewing and downloading, but can no longer clear logs until you grant Clear logs. Admins are unaffected.
