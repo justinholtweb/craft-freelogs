@@ -1,5 +1,40 @@
 # Changelog
 
+## 6.0.0-beta.1 - Unreleased
+
+Freelog for Craft CMS 6, rebuilt as a native Craft 6 plugin. It runs on Laravel and has no
+dependency on the Yii 2 adapter. Craft 6 is in beta, and so is this release. Update to Freelog
+5.1.0 before upgrading Craft, and see [the upgrade guide](https://github.com/justinholtweb/craft-freelogs/blob/6.0.0/UPGRADING.md).
+
+### Added
+
+- Reads Laravel's log format, which is what Craft 6 writes (`[2026-11-19 10:06:21] local.ERROR: message {"exception":…}`), with the JSON context and the stack trace kept with their entry. The channel (`local`, `production`) shows as the category. Craft 5 and Craft 3/4 logs kept in `storage/logs` still parse.
+- Each file's format is recognised from its first entry, so a line inside a trace or a dumped query that starts with a date is no longer split off as an entry of its own.
+- The digest is registered on Laravel's scheduler every 15 minutes; a site running `php artisan schedule:run` needs no cron entry of Freelog's own.
+- **Freelog → Error digest**: when the digest last ran and next goes, and *Send a test digest now*.
+- A *Clear this log* button on the log view, and a file switcher in its toolbar.
+
+### Changed
+
+- Requires Craft CMS 6 and PHP 8.5.
+- Console commands are Artisan commands: `php artisan freelog:digest:send` and `freelog:digest:status`. The Freelog 5 names (`freelog/digest/send`, `freelog/digest/status`) still work as aliases.
+- The digest's "own secrets" are Craft 6's: the application key (`APP_KEY`, and `APP_PREVIOUS_KEYS`), every database connection's password, Craft's `securityKey` if set, and secret-named environment variables as before.
+- A Laravel error is quoted in the digest by its message, without the `{"exception":…}` context; with traces on, the frames go without the `[stacktrace]` markers.
+- *Leave out 4xx HTTP errors* also recognises Symfony's 4xx exceptions in Laravel entries. Craft 6 doesn't log 404s or other HTTP exceptions by default, so the setting now mostly applies to Craft 5 logs kept after an upgrade.
+- Digest emails are sent with Laravel Mail through Craft's email settings.
+- Settings are on the standard **Settings → Plugins → Freelog** screen. `freelog/settings` redirects there.
+- The PHP namespace is `JustinHoltWeb\Freelog` (was `justinholtweb\freelog`).
+- `Digest::EVENT_BEFORE_SEND` and `DigestEvent` are replaced by a Laravel event, `JustinHoltWeb\Freelog\Events\SendingDigest`, with the same `recipients`, `subject`, `variables`, `isTest` and `isValid`.
+- The web fallback checks the schedule after the response has been sent (Laravel's `terminating`) rather than at the end of the request.
+
+### Fixed
+
+- The `PWD` environment variable (the shell's working directory) is no longer treated as a secret, so the project path in a stack trace isn't masked.
+
+### Internal
+
+- Tests moved to Pest, with parser tests on real Laravel and Craft 5 log excerpts and tests for the digest's read positions across Laravel's daily rotation. Pint and Larastan (level 6) replace ECS and PHPStan's Craft ruleset. The Craft 5 integration scripts were dropped; the same checks were run against the Craft 6 test harness.
+
 ## 5.1.0 - 2026-10-09
 ### Added
 
