@@ -1,0 +1,174 @@
+2026-11-08 04:58:25 [web.INFO] [yii\db\Connection::open] Opening DB connection: mysql:host=db;dbname=db;port=3306 {"memory":15589688} 
+2026-11-08 04:58:25 [web.INFO] [nystudio107\codeeditor\CodeEditor::bootstrap] CodeEditor module bootstrapped {"memory":21662184} 
+2026-11-08 04:59:05 [web.ERROR] [yii\web\HttpException:403] yii\web\ForbiddenHttpException: User is not authorized to perform this action. in /var/www/html/vendor/craftcms/cms/src/web/Controller.php:521
+Stack trace:
+#0 /var/www/craft-leads/src/controllers/PopupsController.php(192): craft\web\Controller->requirePermission('leads:managePop...')
+#1 [internal function]: justinholtweb\leads\controllers\PopupsController->actionSave()
+#2 /var/www/html/vendor/yiisoft/yii2/base/InlineAction.php(60): call_user_func_array(Array, Array)
+#3 /var/www/html/vendor/yiisoft/yii2/base/Controller.php(182): yii\base\InlineAction->runWithParams(Array)
+#4 /var/www/html/vendor/yiisoft/yii2/base/Module.php(547): yii\base\Controller->runAction('save', Array)
+#5 /var/www/html/vendor/craftcms/cms/src/web/Application.php(364): yii\base\Module->runAction('leads/popups/sa...', Array)
+#6 /var/www/html/vendor/craftcms/cms/src/web/Application.php(613): craft\web\Application->runAction('leads/popups/sa...', Array)
+#7 /var/www/html/vendor/craftcms/cms/src/web/Application.php(326): craft\web\Application->_processActionRequest(Object(craft\web\Request))
+#8 /var/www/html/vendor/yiisoft/yii2/base/Application.php(382): craft\web\Application->handleRequest(Object(craft\web\Request))
+#9 /var/www/html/web/index.php(12): yii\base\Application->run()
+#10 {main} {"memory":98754488,"exception":"[object] (yii\\web\\ForbiddenHttpException(code: 0): User is not authorized to perform this action. at /var/www/html/vendor/craftcms/cms/src/web/Controller.php:521)"} 
+2026-11-08 04:58:25 [web.INFO] [application] Request context:
+$_GET = [
+    'p' => 'actions/users/session-info'
+]
+
+$_POST = []
+
+$_FILES = []
+
+$_COOKIE = []
+
+$_SERVER = [
+    'DEPLOY_NAME' => 'local'
+    'DDEV_WEBSERVER_TYPE' => 'nginx-fpm'
+    'npm_config_cache' => '/mnt/ddev-global-cache/npm'
+    'COREPACK_ENABLE_DOWNLOAD_PROMPT' => '0'
+    'DDEV_GOOS' => 'darwin'
+    'IS_DDEV_PROJECT' => 'true'
+    'PHP_DEFAULT_VERSION' => '8.4'
+    'HOSTNAME' => 'plugin-testing-web'
+    'MAILPIT_SMTP_PORT' => '1025'
+    'MH_SMTP_BIND_ADDR' => '127.0.0.1:1025'
+    'DDEV_PRIMARY_URL_WITHOUT_PORT' => 'https://plugin-testing.ddev.site'
+    'CRAFT_DB_PORT' => '3306'
+    'SSH_AUTH_SOCK' => '/home/.ssh-agent/socket'
+    'DDEV_GID' => '20'
+    'NODE_EXTRA_CA_CERTS' => '/mnt/ddev-global-cache/mkcert/rootCA.pem'
+    'DOCKER_IP' => '127.0.0.1'
+    'PGPASSWORD' => 'db'
+    'CRAFT_WEB_ROOT' => '/var/www/html/web'
+    'DDEV_DOCROOT' => 'web'
+    'PWD' => '/var/www/html'
+    'PLATFORMSH_CLI_UPDATES_CHECK' => '0'
+    'DDEV_APPROOT' => '/var/www/html'
+    'DDEV_FILES_DIR' => ''
+    'APACHE_SITE_TEMPLATE' => '/etc/apache2/apache-site.conf'
+    'PHP_INI' => '/etc/php/8.2/fpm/php.ini'
+    'DDEV_VERSION' => 'v1.25.4'
+    'PRIMARY_SITE_URL' => 'https://plugin-testing.ddev.site'
+    'TZ' => 'America/New_York'
+    'DDEV_XHPROF_MODE' => 'xhgui'
+    'HTTPS_EXPOSE' => '443:80,8026:8025'
+    'COREPACK_HOME' => '/mnt/ddev-global-cache/corepack'
+    'CRAFT_DB_DATABASE' => 'db'
+    'DDEV_PRIMARY_URL' => 'https://plugin-testing.ddev.site'
+    'LINES' => '24'
+    'DDEV_SITENAME' => 'plugin-testing'
+    'HOME' => '/home/jholt'
+    'DRUSH_OPTIONS_URI' => 'https://plugin-testing.ddev.site'
+    'LANG' => 'C.UTF-8'
+    'COLUMNS' => '80'
+    'N_PREFIX' => '/usr/local/n'
+    'DDEV_MUTAGEN_ENABLED' => 'false'
+    'N_CACHE_PREFIX' => '/mnt/ddev-global-cache/n_prefix/plugin-testing-web'
+    'DDEV_USER' => 'jholt'
+    'PGUSER' => 'db'
+    'TERMINUS_CACHE_DIR' => '/mnt/ddev-global-cache/terminus/cache'
+    'DDEV_PRIMARY_URL_PORT' => '443'
+    'DDEV_ROUTER_HTTP_PORT' => '80'
+    'MAILPIT_SMTP_HOSTNAME' => '127.0.0.1'
+    'CRAFT_DB_DRIVER' => 'mysql'
+    'COMPOSER_PROCESS_TIMEOUT' => '2000'
+    'NGINX_SITE_TEMPLATE' => '/etc/nginx/nginx-site.conf'
+    'DDEV_FILES_DIRS' => ''
+    'CRAFT_DB_SERVER' => 'db'
+    'HTTP_EXPOSE' => '80:80,8025:8025'
+    'DDEV_PHP_VERSION' => '8.2'
+    'DDEV_TLD' => 'ddev.site'
+    'DDEV_HOSTNAME' => 'plugin-testing.ddev.site,addtional-site.ddev.site'
+    'DDEV_PROJECT' => 'plugin-testing'
+    'DDEV_GOARCH' => 'arm64'
+    'VIRTUAL_HOST' => 'plugin-testing.ddev.site,addtional-site.ddev.site'
+    'TERM' => 'xterm'
+    'USER' => 'jholt'
+    'MYSQL_HISTFILE' => '/mnt/ddev-global-cache/mysqlhistory/plugin-testing-web/mysql_history'
+    'DDEV_WEB_ENTRYPOINT' => '/mnt/ddev_config/web-entrypoint.d'
+    'DDEV_UID' => '502'
+    'CAROOT' => '/mnt/ddev-global-cache/mkcert'
+    'SHLVL' => '1'
+    'COMPOSER_ALLOW_SUPERUSER' => '1'
+    'BASH_ENV' => '/etc/bash.nointeractive.bashrc'
+    'DDEV_DATABASE' => 'mariadb:10.11'
+    'PGDATABASE' => 'db'
+    'CRAFT_DB_USER' => 'db'
+    'DDEV_SCHEME' => 'https'
+    'XHPROF_OUTPUT_DIR' => '/tmp/xhprof'
+    'COMPOSER_CACHE_DIR' => '/mnt/ddev-global-cache/composer'
+    'DDEV_XDEBUG_ENABLED' => 'false'
+    'DDEV_DATABASE_FAMILY' => 'mysql'
+    'PGHOST' => 'db'
+    'DDEV_COMPOSER_ROOT' => '/var/www/html'
+    'CRAFT_DB_PASSWORD' => '••'
+    'DOCROOT' => 'web'
+    'TERMINUS_HIDE_UPDATE_MESSAGE' => '1'
+    'PATH' => '/home/jholt/.local/bin:/home/jholt/bin:/var/www/html/vendor/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/n/bin:/var/www/html/bin:/mnt/ddev-global-cache/global-commands/web'
+    'HOST_DOCKER_INTERNAL_IP' => ''
+    'DDEV_PROJECT_TYPE' => 'craftcms'
+    'DEBIAN_FRONTEND' => 'noninteractive'
+    'DDEV_ROUTER_HTTPS_PORT' => '443'
+    'EXECIGNORE' => '/var/www/html/vendor/bin/composer'
+    'SUPERVISOR_ENABLED' => '1'
+    'SUPERVISOR_SERVER_URL' => 'unix:///var/run/supervisor/supervisor.sock'
+    'SUPERVISOR_PROCESS_NAME' => 'php-fpm'
+    'SUPERVISOR_GROUP_NAME' => 'php-fpm'
+    'HTTP_ACCEPT' => 'application/json'
+    'HTTP_USER_AGENT' => 'GuzzleHttp/7'
+    'HTTPS' => 'off'
+    'HTTP_HOST' => 'localhost'
+    'REDIRECT_STATUS' => '200'
+    'SERVER_NAME' => 'localhost'
+    'SERVER_PORT' => '80'
+    'SERVER_ADDR' => '127.0.0.1'
+    'REMOTE_USER' => ''
+    'REMOTE_PORT' => '56916'
+    'REMOTE_ADDR' => '127.0.0.1'
+    'SERVER_SOFTWARE' => 'nginx/1.26.3'
+    'GATEWAY_INTERFACE' => 'CGI/1.1'
+    'REQUEST_SCHEME' => 'http'
+    'SERVER_PROTOCOL' => 'HTTP/1.1'
+    'DOCUMENT_ROOT' => '/var/www/html/web'
+    'DOCUMENT_URI' => '/index.php'
+    'REQUEST_URI' => '/index.php?p=actions/users/session-info'
+    'CONTENT_LENGTH' => ''
+    'CONTENT_TYPE' => ''
+    'REQUEST_METHOD' => 'GET'
+    'QUERY_STRING' => 'p=actions/users/session-info'
+    'SCRIPT_NAME' => '/index.php'
+    'SCRIPT_FILENAME' => '/var/www/html/web/index.php'
+    'FCGI_ROLE' => 'RESPONDER'
+    'PHP_SELF' => '/index.php'
+    'REQUEST_TIME_FLOAT' => 1794142705.1908
+    'REQUEST_TIME' => 1794142705
+    'CRAFT_APP_ID' => 'CraftCMS--cf126c1d-50a8-4f0f-8c95-8302c33b4d61'
+    'CRAFT_ENVIRONMENT' => 'dev'
+    'CRAFT_SECURITY_KEY' => '••••••••••••••••••••••••••••••••'
+    'CRAFT_DEV_MODE' => 'true'
+    'CRAFT_ALLOW_ADMIN_CHANGES' => 'true'
+    'CRAFT_DISALLOW_ROBOTS' => 'true'
+    'ADDITIONAL_SITE_URL' => 'https://additional-site.ddev.site'
+    'BEE_DATABASE_ID' => 'northwind-store'
+    'BEE_PRIVATE_TOKEN' => '••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••'
+    'CRAFT_SITE' => 'default'
+    'CRAFT_SITE_UPPER' => 'DEFAULT'
+] {"environment":"dev"} 
+2026-11-08 05:18:47 [web.ERROR] [craft\web\twig\TemplateLoaderException] craft\web\twig\TemplateLoaderException: Unable to find the template “pointz/coupons/_due”. in /var/www/html/vendor/craftcms/cms/src/web/twig/TemplateLoader.php:108
+Stack trace:
+#0 /var/www/html/vendor/craftcms/cms/src/web/twig/TemplateLoader.php(69): craft\web\twig\TemplateLoader->_resolveTemplate('pointz/coupons/...')
+#1 /var/www/html/vendor/twig/twig/src/Environment.php(317): craft\web\twig\TemplateLoader->getCacheKey('pointz/coupons/...')
+#2 /var/www/html/vendor/twig/twig/src/Environment.php(370): Twig\Environment->getTemplateClass('pointz/coupons/...')
+#3 /var/www/html/vendor/twig/twig/src/Environment.php(333): Twig\Environment->load('pointz/coupons/...')
+#4 /var/www/html/vendor/craftcms/cms/src/web/View.php(596): Twig\Environment->render('pointz/coupons/...', Array)
+#5 /var/www/html/vendor/craftcms/cms/src/web/View.php(683): craft\web\View->renderTemplate('pointz/coupons/...', Array)
+#6 /var/www/html/vendor/craftcms/cms/src/web/TemplateResponseFormatter.php(57): craft\web\View->renderPageTemplate('pointz/coupons/...', Array, 'site')
+#7 /var/www/html/vendor/yiisoft/yii2/web/Response.php(1118): craft\web\TemplateResponseFormatter->format(Object(craft\web\Response))
+#8 /var/www/html/vendor/craftcms/cms/src/web/Response.php(358): yii\web\Response->prepare()
+#9 /var/www/html/vendor/yiisoft/yii2/web/Response.php(339): craft\web\Response->prepare()
+#10 /var/www/html/vendor/yiisoft/yii2/base/Application.php(388): yii\web\Response->send()
+#11 /var/www/html/web/index.php(12): yii\base\Application->run()
+#12 {main} {"memory":91321008,"exception":"[object] (craft\\web\\twig\\TemplateLoaderException(code: 0): Unable to find the template “pointz/coupons/_due”. at /var/www/html/vendor/craftcms/cms/src/web/twig/TemplateLoader.php:108)"} 
