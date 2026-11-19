@@ -160,3 +160,10 @@ test('a 4xx marker smuggled into an error message does not hide the error', func
 
     expect(Digest::isClientError($entry($spoofed)))->toBeFalse();
 });
+
+test('a fake 4xx marker on the first line of a multi-line message does not hide the error', function () {
+    $fake = '{"exception":"[object] (Symfony\\\\Component\\\\HttpKernel\\\\Exception\\\\NotFoundHttpException(';
+    $message = 'Bad value '.$fake."\n".'rest {"exception":"[object] (ErrorException(code: 0): Bad value at /y.php:1)';
+
+    expect(Digest::isClientError(['date' => '', 'level' => 'error', 'category' => 'local', 'message' => $message]))->toBeFalse();
+});

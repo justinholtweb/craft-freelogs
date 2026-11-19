@@ -687,7 +687,10 @@ class Digest
         // its context. Text shaped like the context marker could otherwise make a real error read
         // as a 404 and drop it from the digest. One marker is what Laravel writes; anything else
         // is ambiguous, and an ambiguous entry is reported rather than hidden.
-        if (substr_count($first, '{"exception":"[object] (') !== 1) {
+        // Counted over the whole entry, not the first line: a message with a newline in it could
+        // otherwise put a fake marker alone on the first line and Laravel's real one further down.
+        $marker = '{"exception":"[object] (';
+        if (substr_count($entry['message'], $marker) !== 1 || substr_count($first, $marker) !== 1) {
             return false;
         }
 
