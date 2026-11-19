@@ -150,3 +150,13 @@ test('4xx HTTP exceptions are recognised in both formats', function () {
         ->and(Digest::isClientError($entry('local', 'Boom {"exception":"[object] (Symfony\\\\Component\\\\HttpKernel\\\\Exception\\\\HttpException(code: 0): x at /y.php:1)')))->toBeFalse()
         ->and(Digest::isClientError($entry('local', "Unclosed '[' {\"exception\":\"[object] (ParseError(code: 0): x at /y.php:1)")))->toBeFalse();
 });
+
+test('a 4xx marker smuggled into an error message does not hide the error', function () {
+    $entry = fn (string $message) => ['date' => '', 'level' => 'error', 'category' => 'local', 'message' => $message];
+    $fake = '{"exception":"[object] (Symfony\\\\Component\\\\HttpKernel\\\\Exception\\\\NotFoundHttpException(';
+
+    // Request input that reached a real error's message, which Laravel then repeats in its context.
+    $spoofed = 'Undefined array key "'.$fake.'" {"exception":"[object] (ErrorException(code: 0): Undefined array key "'.$fake.'" at /y.php:1)';
+
+    expect(Digest::isClientError($entry($spoofed)))->toBeFalse();
+});

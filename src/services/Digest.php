@@ -490,11 +490,14 @@ class Digest
                     continue;
                 }
 
-                Log::warning("Freelog: the mailer refused a message to {$recipient}: {$subject}");
+                Log::warning('Freelog: the mailer refused a message to '.Redactor::forInstall()->redact($recipient).'.');
             } catch (Throwable $e) {
                 // One bad address or a transport hiccup should not cost every other recipient
                 // their copy.
-                Log::warning("Freelog: could not email {$recipient}: ".$e->getMessage());
+                // Redacted: this log is readable in Freelog's own viewer, and a transport error can
+                // quote the address, the server and occasionally credentials.
+                $redactor = Redactor::forInstall();
+                Log::warning('Freelog: could not email '.$redactor->redact($recipient).': '.$e::class.': '.$redactor->redact($e->getMessage()));
             }
         }
 
@@ -679,6 +682,14 @@ class Digest
 
         $first = strstr($entry['message'], "\n", true);
         $first = $first === false ? $entry['message'] : $first;
+
+        // Exception messages often carry request input, and Laravel repeats the message inside
+        // its context. Text shaped like the context marker could otherwise make a real error read
+        // as a 404 and drop it from the digest. One marker is what Laravel writes; anything else
+        // is ambiguous, and an ambiguous entry is reported rather than hidden.
+        if (substr_count($first, '{"exception":"[object] (') !== 1) {
+            return false;
+        }
 
         return (bool) preg_match(
             '/\{"exception":"\[object\] \((?:Symfony\\\\\\\\Component\\\\\\\\HttpKernel\\\\\\\\Exception\\\\\\\\)(?:'.self::CLIENT_ERROR_CLASSES.')HttpException\(/',
