@@ -1,30 +1,33 @@
 <?php
 
-namespace justinholtweb\freelog\models;
+declare(strict_types=1);
 
-use Craft;
-use craft\base\Model;
-use craft\helpers\App;
-use ReflectionNamedType;
-use ReflectionProperty;
+namespace JustinHoltWeb\Freelog\Models;
+
+use CraftCms\Cms\Plugin\PluginSettings;
+use CraftCms\Cms\Support\Env;
+use Illuminate\Validation\Rule;
+
+use function CraftCms\Cms\t;
 
 /**
- * Plugin settings, in project config. The digest's per-file read positions are state, not
- * configuration, and live in the `freelog_digests` table.
+ * Plugin settings, in project config under the same keys as Freelog 5. The digest's per-file read
+ * positions are state, not configuration, and live in the `freelog_digests` table.
  *
- * Nothing here is marked `required`. A `required` rule fails `savePluginSettings()` wholesale, so
- * one unfilled box would block saving every other setting on a fresh install.
+ * Nothing here is `required`. A `required` rule fails the whole settings save, so one unfilled
+ * box would block saving every other setting on a fresh install.
  */
-class Settings extends Model
+class Settings extends PluginSettings
 {
-    public const DIGEST_DAILY = 'daily';
-    public const DIGEST_WEEKLY = 'weekly';
+    public const string DIGEST_DAILY = 'daily';
+
+    public const string DIGEST_WEEKLY = 'weekly';
 
     /** Every level the viewer knows, most severe first. */
-    public const LEVELS = ['emergency', 'alert', 'critical', 'error', 'warning', 'notice', 'info', 'debug'];
+    public const array LEVELS = ['emergency', 'alert', 'critical', 'error', 'warning', 'notice', 'info', 'debug'];
 
     /** What the digest reports by default: the levels that mean something broke. */
-    public const DIGEST_DEFAULT_LEVELS = ['emergency', 'alert', 'critical', 'error'];
+    public const array DIGEST_DEFAULT_LEVELS = ['emergency', 'alert', 'critical', 'error'];
 
     /** Email a digest of new error-level log entries on a schedule. */
     public bool $digestEnabled = false;
@@ -37,8 +40,8 @@ class Settings extends Model
 
     /**
      * Hour of the day, 0–23, in the system time zone, after which the digest for the day or week
-     * becomes due. "After", not "at": a site whose cron missed the hour still sends later in the
-     * same period, once.
+     * becomes due. "After", not "at": a site whose scheduler missed the hour still sends later in
+     * the same period, once.
      */
     public int $digestHour = 8;
 
@@ -46,8 +49,10 @@ class Settings extends Model
      * Who gets it: email addresses separated by commas or new lines, or an environment variable
      * (`$FREELOG_DIGEST_RECIPIENTS`) holding the same. Set by an admin — the digest carries log
      * contents off the server.
+     *
+     * Nullable because Laravel's ConvertEmptyStringsToNull middleware turns a blank box into null.
      */
-    public string $digestRecipients = '';
+    public ?string $digestRecipients = null;
 
     /**
      * Send a digest even when no new entries were logged. Off by default: an "all clear" every
@@ -58,14 +63,15 @@ class Settings extends Model
     /**
      * Levels the digest reports. Empty means the default: emergency, alert, critical and error.
      *
-     * @var string[]
+     * @var list<string>
      */
     public array $digestLevels = self::DIGEST_DEFAULT_LEVELS;
 
     /**
-     * Leave out 4xx HTTP exceptions (`yii\web\HttpException:404` and friends). Craft logs every
-     * not-found, forbidden and bad request at error level; on a public site they are most of the
-     * error log and almost none of them are the site's fault.
+     * Leave out 4xx HTTP exceptions. Craft 5 logged every not-found, forbidden and bad request at
+     * error level (Yii's `HttpException:404` category); Craft 6 leaves HTTP exceptions unreported, so
+     * this now matters for Craft 5 logs kept after an upgrade and for a site whose exception
+     * handler reports them anyway.
      */
     public bool $digestIgnoreClientErrors = true;
 
@@ -78,73 +84,78 @@ class Settings extends Model
 
     /**
      * Also check whether a digest is due at the end of web requests (at most every five minutes)
-     * and queue it, for sites without a cron job running `freelog/digest/send`.
+     * and queue it, for sites where nothing runs Laravel's scheduler.
      */
     public bool $digestWebTrigger = true;
+
+    public function getRules(): array
+    {
+        return [
+            'digestEnabled' => ['boolean'],
+            'digestSendWhenEmpty' => ['boolean'],
+            'digestIgnoreClientErrors' => ['boolean'],
+            'digestIncludeTraces' => ['boolean'],
+            'digestWebTrigger' => ['boolean'],
+            'digestFrequency' => [Rule::in([self::DIGEST_DAILY, self::DIGEST_WEEKLY])],
+            'digestWeekday' => ['integer', 'min:1', 'max:7'],
+            'digestHour' => ['integer', 'min:0', 'max:23'],
+            'digestRecipients' => ['nullable', 'string'],
+            'digestLevels' => ['array'],
+            'digestLevels.*' => [Rule::in(self::LEVELS)],
+        ];
+    }
+
+    public function getMessages(): array
+    {
+        return [
+            'digestLevels.*.in' => t('“:input” is not a log level Freelog knows.', category: 'freelog'),
+        ];
+    }
 
     public function attributeLabels(): array
     {
         return [
-            'digestEnabled' => Craft::t('freelog', 'Email an error digest'),
-            'digestFrequency' => Craft::t('freelog', 'How often'),
-            'digestWeekday' => Craft::t('freelog', 'Day of the week'),
-            'digestHour' => Craft::t('freelog', 'Hour'),
-            'digestRecipients' => Craft::t('freelog', 'Recipients'),
-            'digestSendWhenEmpty' => Craft::t('freelog', 'Send even when there is nothing new'),
-            'digestLevels' => Craft::t('freelog', 'Levels to report'),
-            'digestIgnoreClientErrors' => Craft::t('freelog', 'Leave out 4xx HTTP errors'),
-            'digestIncludeTraces' => Craft::t('freelog', 'Include stack traces'),
-            'digestWebTrigger' => Craft::t('freelog', 'Check from web requests too'),
+            'digestEnabled' => t('Email an error digest', category: 'freelog'),
+            'digestFrequency' => t('How often', category: 'freelog'),
+            'digestWeekday' => t('Day of the week', category: 'freelog'),
+            'digestHour' => t('Hour', category: 'freelog'),
+            'digestRecipients' => t('Recipients', category: 'freelog'),
+            'digestSendWhenEmpty' => t('Send even when there is nothing new', category: 'freelog'),
+            'digestLevels' => t('Levels to report', category: 'freelog'),
+            'digestIgnoreClientErrors' => t('Leave out 4xx HTTP errors', category: 'freelog'),
+            'digestIncludeTraces' => t('Include stack traces', category: 'freelog'),
+            'digestWebTrigger' => t('Check from web requests too', category: 'freelog'),
         ];
     }
 
     /**
-     * @return array<int, array<int|string, mixed>>
+     * The rules, then the recipients — which a rule string can't check, because the value may be
+     * an environment variable. It is checked for what it resolves to here, and again at send
+     * time, because the value can differ between this environment and the one that sends.
      */
-    protected function defineRules(): array
+    public function validate(array|string|null $attributeNames = null, bool $clearErrors = true, bool $throw = false): bool
     {
-        return [
-            [['digestEnabled', 'digestSendWhenEmpty', 'digestIgnoreClientErrors', 'digestIncludeTraces', 'digestWebTrigger'], 'boolean'],
-            [['digestFrequency'], 'in', 'range' => [self::DIGEST_DAILY, self::DIGEST_WEEKLY]],
-            [['digestWeekday'], 'integer', 'min' => 1, 'max' => 7],
-            [['digestHour'], 'integer', 'min' => 0, 'max' => 23],
-            [['digestRecipients'], 'validateRecipients'],
-            [['digestLevels'], 'validateLevels', 'skipOnEmpty' => false],
-        ];
-    }
+        parent::validate($attributeNames, $clearErrors, $throw);
 
-    public function validateRecipients(string $attribute): void
-    {
-        // An environment variable is checked for what it resolves to here, and again at send
-        // time, because the value can differ between this environment and the one that sends.
-        foreach ($this->recipientList(true) as $address) {
-            $this->addError($attribute, Craft::t('freelog', '“{address}” is not an email address.', [
-                'address' => $address,
-            ]));
-        }
-    }
-
-    public function validateLevels(string $attribute): void
-    {
-        foreach ($this->$attribute as $level) {
-            if (!in_array($level, self::LEVELS, true)) {
-                $this->addError($attribute, Craft::t('freelog', '“{name}” is not a log level Freelog knows.', [
-                    'name' => $level,
-                ]));
+        if ($attributeNames === null || in_array('digestRecipients', (array) $attributeNames, true)) {
+            foreach ($this->recipientList(true) as $address) {
+                $this->errors()->add('digestRecipients', t('“{address}” is not an email address.', ['address' => $address], category: 'freelog'));
             }
         }
+
+        return $this->errors()->isEmpty();
     }
 
     /**
      * The digest's recipients, parsed: environment variable resolved, split on commas, semicolons
      * and whitespace, de-duplicated.
      *
-     * @param bool $invalid Return the entries that are *not* email addresses instead.
-     * @return string[]
+     * @param  bool  $invalid  Return the entries that are *not* email addresses instead.
+     * @return list<string>
      */
     public function recipientList(bool $invalid = false): array
     {
-        $raw = (string)App::parseEnv($this->digestRecipients);
+        $raw = (string) Env::parse($this->digestRecipients);
         $parts = preg_split('/[\s,;]+/', $raw, -1, PREG_SPLIT_NO_EMPTY) ?: [];
         $valid = [];
         $bad = [];
@@ -163,7 +174,7 @@ class Settings extends Model
     /**
      * The levels to report, lowercased, with the default standing in for "none ticked".
      *
-     * @return string[]
+     * @return list<string>
      */
     public function levelList(): array
     {
@@ -171,69 +182,55 @@ class Settings extends Model
     }
 
     /**
-     * Craft's control panel posts everything as a string, and a checkbox group with nothing ticked
-     * posts `['']`. Both arrive here.
+     * Posted and project-config values arrive in every shape: numbers as strings, an unticked
+     * checkbox group as `null` or `['']`, a blank number box as `null`. Normalise them before
+     * Craft assigns them to typed properties.
      *
-     * @param mixed $values
+     * @param  array<string, mixed>|mixed  $values
      */
-    public function setAttributes($values, $safeOnly = true): void
+    public function setAttributes($values): void
     {
-        parent::setAttributes(is_array($values) ? $this->normalize($values) : $values, $safeOnly);
+        parent::setAttributes(is_array($values) ? self::normalize($values) : $values);
     }
 
     /**
-     * @param array<string, mixed> $values
+     * @param  array<string, mixed>  $values
      * @return array<string, mixed>
      */
-    private function normalize(array $values): array
+    public static function normalize(array $values): array
     {
         if (array_key_exists('digestLevels', $values)) {
             $levels = $values['digestLevels'];
             $values['digestLevels'] = array_values(array_unique(array_filter(
                 array_map(
-                    fn($value) => is_string($value) ? strtolower(trim($value)) : '',
+                    fn ($value) => is_string($value) ? strtolower(trim($value)) : '',
                     is_array($levels) ? $levels : [$levels],
                 ),
-                fn(string $value) => $value !== '',
+                fn (string $value) => $value !== '',
             )));
         }
 
-        foreach ($values as $name => $value) {
-            if (!property_exists($this, $name) || is_array($value)) {
-                continue;
+        foreach (['digestWeekday', 'digestHour'] as $name) {
+            if (array_key_exists($name, $values)) {
+                if (is_numeric($values[$name])) {
+                    $values[$name] = (int) $values[$name];
+                } else {
+                    // A blank number box: keep the current value rather than a TypeError.
+                    unset($values[$name]);
+                }
             }
+        }
 
-            $cast = self::cast($name, $value);
-
-            if ($cast === null) {
-                unset($values[$name]);
-                continue;
+        foreach (['digestEnabled', 'digestSendWhenEmpty', 'digestIgnoreClientErrors', 'digestIncludeTraces', 'digestWebTrigger'] as $name) {
+            if (array_key_exists($name, $values) && ! is_bool($values[$name])) {
+                $values[$name] = in_array(strtolower(trim((string) $values[$name])), ['1', 'true', 'on', 'yes'], true);
             }
+        }
 
-            $values[$name] = $cast[0];
+        if (array_key_exists('digestFrequency', $values) && ! is_string($values['digestFrequency'])) {
+            unset($values['digestFrequency']);
         }
 
         return $values;
-    }
-
-    /**
-     * @return array{0: mixed}|null Null when the posted value cannot be cast and the default
-     *                              should stand — an empty string in a number box, most often,
-     *                              which would otherwise be a TypeError against a typed int.
-     */
-    private static function cast(string $property, mixed $value): ?array
-    {
-        $type = (new ReflectionProperty(self::class, $property))->getType();
-
-        if (!$type instanceof ReflectionNamedType) {
-            return [$value];
-        }
-
-        return match ($type->getName()) {
-            'bool' => [is_bool($value) ? $value : in_array(strtolower((string)$value), ['1', 'true', 'on', 'yes'], true)],
-            'int' => is_numeric($value) ? [(int)$value] : null,
-            'string' => is_scalar($value) || $value === null ? [(string)$value] : null,
-            default => [$value],
-        };
     }
 }

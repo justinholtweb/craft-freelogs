@@ -1,25 +1,31 @@
 <?php
 
-namespace justinholtweb\freelog\services;
+declare(strict_types=1);
 
-use Craft;
-use craft\base\Component;
-use craft\db\Migration;
-use craft\db\Query;
-use craft\helpers\DateTimeHelper;
-use craft\helpers\Db;
-use craft\helpers\UrlHelper;
+namespace JustinHoltWeb\Freelog\Services;
+
+use CraftCms\Cms\Cms;
+use CraftCms\Cms\Support\Query;
+use CraftCms\Cms\Support\Str;
+use CraftCms\Cms\Support\Url;
+use DateTime;
 use DateTimeImmutable;
 use DateTimeInterface;
 use DateTimeZone;
-use justinholtweb\freelog\events\DigestEvent;
-use justinholtweb\freelog\helpers\Mailer;
-use justinholtweb\freelog\helpers\Redactor;
-use justinholtweb\freelog\jobs\SendDigest;
-use justinholtweb\freelog\models\Settings;
-use justinholtweb\freelog\Plugin;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
+use JustinHoltWeb\Freelog\Events\SendingDigest;
+use JustinHoltWeb\Freelog\Helpers\Redactor;
+use JustinHoltWeb\Freelog\Jobs\SendDigest;
+use JustinHoltWeb\Freelog\Mail\DigestMail;
+use JustinHoltWeb\Freelog\Models\Settings;
+use JustinHoltWeb\Freelog\Plugin;
 use Throwable;
-use yii\db\IntegrityException;
+
+use function CraftCms\Cms\t;
 
 /**
  * The scheduled error digest: once a day or once a week, email the error-level log entries
@@ -33,31 +39,41 @@ use yii\db\IntegrityException;
  *
  * Three ways in, one way through:
  *
- * - `php craft freelog/digest/send` from cron — the recommended route, every 15–60 minutes;
+ * - `php artisan freelog:digest:send` — from Laravel's scheduler every 15 minutes (registered by
+ *   the plugin), or from a cron job of its own;
  * - the end of a web request, at most every five minutes, which queues {@see SendDigest};
  * - "Send a test digest now" in the control panel, which never moves the marker or a position.
  *
  * Log lines carry request data, email addresses and, now and then, a credential. Everything the
  * email quotes passes through {@see Redactor}, messages are cut to their first line, and stack
  * traces stay out unless an admin turns them on.
+ *
+ * @phpstan-import-type Entry from LogService
+ *
+ * @phpstan-type Position array{file: string, offset: int, head?: string|null}
+ * @phpstan-type Scan array{groups: array<string, array<string, mixed>>, total: int, ungrouped: int, offsets: array<string, Position>, files: array<string, int>, levels: array<string, int>}
  */
-class Digest extends Component
+class Digest
 {
-    /** @see DigestEvent Cancel it, or change the recipients, subject or variables. */
-    public const EVENT_BEFORE_SEND = 'beforeSend';
-
-    public const TABLE = '{{%freelog_digests}}';
+    public const string TABLE = 'freelog_digests';
 
     /** One row per digest the plugin sends. Freelog has one. */
     public const HANDLE = 'errors';
 
     public const RESULT_SENT = 'sent';
+
     public const RESULT_DISABLED = 'disabled';
+
     public const RESULT_NO_RECIPIENTS = 'noRecipients';
+
     public const RESULT_NOT_DUE = 'notDue';
+
     public const RESULT_ALREADY_SENT = 'alreadySent';
+
     public const RESULT_NOTHING_NEW = 'nothingNew';
+
     public const RESULT_CANCELLED = 'cancelled';
+
     public const RESULT_FAILED = 'failed';
 
     /** Most groups of entries listed in one email. The rest are a count and a link. */
@@ -71,6 +87,7 @@ class Digest extends Component
 
     /** Stack trace lines quoted when traces are on, and their cap in characters. */
     public const MAX_TRACE_LINES = 12;
+
     public const MAX_TRACE = 2000;
 
     /** How much of a log's start is fingerprinted to notice it was rewritten. */
@@ -80,14 +97,24 @@ class Digest extends Component
     public const WEB_CHECK_SECONDS = 300;
 
     private const WEB_CHECK_KEY = 'freelog:digest:checked';
+
     private const QUEUED_KEY = 'freelog:digest:queued:';
+
+    /**
+     * @param  Settings|null  $settings  For tests. Otherwise the plugin's live settings, read on
+     *                                   every call so a save in the same request takes effect.
+     */
+    public function __construct(
+        private readonly LogService $logs,
+        private readonly ?Settings $settings = null,
+    ) {}
 
     // ------------------------------------------------------------------------------- schedule
 
     /** Now, in the system time zone — the one the digest hour is set in. */
     public function now(): DateTimeImmutable
     {
-        return new DateTimeImmutable('now', new DateTimeZone(Craft::$app->getTimeZone()));
+        return new DateTimeImmutable('now', new DateTimeZone(Cms::systemTimezone()));
     }
 
     /**
@@ -110,7 +137,7 @@ class Digest extends Component
         $now = $this->inSystemTime($now);
 
         if ($settings->digestFrequency === Settings::DIGEST_WEEKLY) {
-            $now = $now->setISODate((int)$now->format('o'), (int)$now->format('W'), $settings->digestWeekday);
+            $now = $now->setISODate((int) $now->format('o'), (int) $now->format('W'), $settings->digestWeekday);
         }
 
         return $now->setTime($settings->digestHour, 0);
@@ -136,7 +163,7 @@ class Digest extends Component
     {
         $settings = $this->settings();
 
-        if (!$settings->digestEnabled) {
+        if (! $settings->digestEnabled) {
             return null;
         }
 
@@ -158,9 +185,9 @@ class Digest extends Component
     /**
      * The scheduled send. Idempotent: call it as often as you like, it sends once per period.
      *
-     * @param bool $force Ignore the schedule and the "already sent" marker — `--force` on the
-     *                    console command. Still records the send and moves the read positions,
-     *                    so the next scheduled digest reports what is new since *this*.
+     * @param  bool  $force  Ignore the schedule and the "already sent" marker — `--force` on the
+     *                       console command. Still records the send and moves the read positions,
+     *                       so the next scheduled digest reports what is new since *this*.
      * @return string One of the `RESULT_*` constants.
      */
     public function run(?DateTimeInterface $now = null, bool $force = false): string
@@ -168,7 +195,7 @@ class Digest extends Component
         $settings = $this->settings();
         $now = $this->inSystemTime($now ?? $this->now());
 
-        if (!$force && !$settings->digestEnabled) {
+        if (! $force && ! $settings->digestEnabled) {
             return self::RESULT_DISABLED;
         }
 
@@ -178,14 +205,14 @@ class Digest extends Component
             return self::RESULT_NO_RECIPIENTS;
         }
 
-        if (!$force && $now < $this->dueAt($now)) {
+        if (! $force && $now < $this->dueAt($now)) {
             return self::RESULT_NOT_DUE;
         }
 
         $period = $this->periodKey($now);
         $state = $this->state();
 
-        if (!$force && ($state['period'] === $period || !$this->claim($period, $state['period']))) {
+        if (! $force && ($state['period'] === $period || ! $this->claim($period, $state['period']))) {
             return self::RESULT_ALREADY_SENT;
         }
 
@@ -193,12 +220,12 @@ class Digest extends Component
             $scan = $this->collect($state['offsets'], $this->firstRunSince($state, $now));
         } catch (Throwable $e) {
             $this->release($period, $state['period']);
-            Craft::warning('Could not read the logs for the error digest: ' . $e->getMessage(), Plugin::LOG_CATEGORY);
+            Log::warning('Freelog: could not read the logs for the error digest: '.$e->getMessage());
 
             return $this->record(null, null, self::RESULT_FAILED);
         }
 
-        if ($scan['total'] === 0 && !$settings->digestSendWhenEmpty) {
+        if ($scan['total'] === 0 && ! $settings->digestSendWhenEmpty) {
             return $this->record($period, $scan['offsets'], self::RESULT_NOTHING_NEW);
         }
 
@@ -227,7 +254,7 @@ class Digest extends Component
      * leaves the marker and every read position alone — a test must never stop the real one
      * reporting the same entries.
      *
-     * @param string[] $recipients
+     * @param  string[]  $recipients
      * @return int How many recipients it was delivered to.
      */
     public function sendTest(array $recipients, ?DateTimeInterface $now = null): int
@@ -235,7 +262,7 @@ class Digest extends Component
         $state = $this->state();
         $scan = $this->collect($state['offsets'], $this->firstRunSince($state, $this->inSystemTime($now ?? $this->now())));
 
-        return (int)$this->deliver($recipients, $scan, true);
+        return (int) $this->deliver($recipients, $scan, true);
     }
 
     /**
@@ -246,33 +273,27 @@ class Digest extends Component
     {
         $settings = $this->settings();
 
-        if (!$settings->digestEnabled || !$settings->digestWebTrigger) {
-            return false;
-        }
-
-        $cache = Craft::$app->getCache();
-
-        if ($cache === null) {
+        if (! $settings->digestEnabled || ! $settings->digestWebTrigger) {
             return false;
         }
 
         // `add()` only writes when the key is absent, so of several requests landing together
         // one goes on to look at the schedule.
-        if (!$cache->add(self::WEB_CHECK_KEY, 1, self::WEB_CHECK_SECONDS)) {
+        if (! Cache::add(self::WEB_CHECK_KEY, 1, self::WEB_CHECK_SECONDS)) {
             return false;
         }
 
         $now = $this->inSystemTime($now ?? $this->now());
 
-        if (!$this->isDue($now)) {
+        if (! $this->isDue($now)) {
             return false;
         }
 
-        if (!$cache->add(self::QUEUED_KEY . $this->periodKey($now), 1, 3600)) {
+        if (! Cache::add(self::QUEUED_KEY.$this->periodKey($now), 1, 3600)) {
             return false;
         }
 
-        Craft::$app->getQueue()->push(new SendDigest());
+        SendDigest::dispatch();
 
         return true;
     }
@@ -283,7 +304,7 @@ class Digest extends Component
      * The marker: which period was last claimed, where each log was read up to, and how the last
      * run went. `offsets` is null until the first digest has been recorded.
      *
-     * @return array{period: string|null, offsets: array<string, array{file: string, offset: int, head?: string|null}>|null, lastRunAt: \DateTime|null, lastSentAt: \DateTime|null, lastResult: string|null, lastCount: int}
+     * @return array{period: string|null, offsets: array<string, Position>|null, lastRunAt: DateTime|null, lastSentAt: DateTime|null, lastResult: string|null, lastCount: int}
      */
     public function state(): array
     {
@@ -291,8 +312,15 @@ class Digest extends Component
 
         if ($row === null) {
             try {
-                Db::insert(self::TABLE, ['handle' => self::HANDLE, 'lastCount' => 0]);
-            } catch (IntegrityException) {
+                $now = Query::prepareDateForDb(new DateTimeImmutable);
+                DB::table(self::TABLE)->insert([
+                    'handle' => self::HANDLE,
+                    'lastCount' => 0,
+                    'dateCreated' => $now,
+                    'dateUpdated' => $now,
+                    'uid' => (string) Str::uuid(),
+                ]);
+            } catch (UniqueConstraintViolationException) {
                 // Somebody else made it between our read and our write. Theirs will do.
             }
 
@@ -300,7 +328,7 @@ class Digest extends Component
         }
 
         $offsets = null;
-        $decoded = isset($row['offsets']) ? json_decode((string)$row['offsets'], true) : null;
+        $decoded = isset($row['offsets']) ? json_decode((string) $row['offsets'], true) : null;
 
         if (is_array($decoded)) {
             $offsets = [];
@@ -308,21 +336,21 @@ class Digest extends Component
             foreach ($decoded as $key => $position) {
                 if (is_string($key) && is_array($position) && isset($position['file'], $position['offset'])) {
                     $offsets[$key] = [
-                        'file' => (string)$position['file'],
-                        'offset' => max(0, (int)$position['offset']),
-                        'head' => isset($position['head']) ? (string)$position['head'] : null,
+                        'file' => (string) $position['file'],
+                        'offset' => max(0, (int) $position['offset']),
+                        'head' => isset($position['head']) ? (string) $position['head'] : null,
                     ];
                 }
             }
         }
 
         return [
-            'period' => isset($row['period']) && $row['period'] !== '' ? (string)$row['period'] : null,
+            'period' => isset($row['period']) && $row['period'] !== '' ? (string) $row['period'] : null,
             'offsets' => $offsets,
-            'lastRunAt' => DateTimeHelper::toDateTime($row['lastRunAt'] ?? null) ?: null,
-            'lastSentAt' => DateTimeHelper::toDateTime($row['lastSentAt'] ?? null) ?: null,
+            'lastRunAt' => self::utcDate($row['lastRunAt'] ?? null),
+            'lastSentAt' => self::utcDate($row['lastSentAt'] ?? null),
             'lastResult' => $row['lastResult'] ?? null,
-            'lastCount' => (int)($row['lastCount'] ?? 0),
+            'lastCount' => (int) ($row['lastCount'] ?? 0),
         ];
     }
 
@@ -332,30 +360,33 @@ class Digest extends Component
      */
     private function claim(string $period, ?string $previous): bool
     {
-        return Db::update(
-            self::TABLE,
-            ['period' => $period],
-            ['handle' => self::HANDLE, 'period' => $previous],
-        ) === 1;
+        return DB::table(self::TABLE)
+            ->where('handle', self::HANDLE)
+            ->where('period', $previous)
+            ->update(['period' => $period]) === 1;
     }
 
     /** Hands a claimed period back after a failure, so the next run tries again. */
     private function release(string $period, ?string $previous): void
     {
-        Db::update(self::TABLE, ['period' => $previous], ['handle' => self::HANDLE, 'period' => $period]);
+        DB::table(self::TABLE)
+            ->where('handle', self::HANDLE)
+            ->where('period', $period)
+            ->update(['period' => $previous]);
     }
 
     /**
      * Writes down how a run went. `$period` and `$offsets` are null when nothing should change but
      * the result — a failure leaves the period and the read positions as they were.
      *
-     * @param array<string, array{file: string, offset: int, head?: string|null}>|null $offsets
+     * @param  array<string, Position>|null  $offsets
      */
     private function record(?string $period, ?array $offsets, string $result, ?int $count = null): string
     {
-        $now = new DateTimeImmutable();
+        $now = new DateTimeImmutable;
         $columns = [
-            'lastRunAt' => Db::prepareDateForDb($now),
+            'lastRunAt' => Query::prepareDateForDb($now),
+            'dateUpdated' => Query::prepareDateForDb($now),
             'lastResult' => $result,
         ];
 
@@ -365,20 +396,20 @@ class Digest extends Component
 
         if ($offsets !== null) {
             // An object even when empty, so "read nothing yet" and "never ran" stay different.
-            $columns['offsets'] = json_encode((object)$offsets);
+            $columns['offsets'] = json_encode((object) $offsets);
         }
 
         if ($result === self::RESULT_SENT) {
-            $columns['lastSentAt'] = Db::prepareDateForDb($now);
-            $columns['lastCount'] = (int)$count;
+            $columns['lastSentAt'] = Query::prepareDateForDb($now);
+            $columns['lastCount'] = (int) $count;
         }
 
-        Db::update(self::TABLE, $columns, ['handle' => self::HANDLE]);
+        DB::table(self::TABLE)->where('handle', self::HANDLE)->update($columns);
 
         if ($result === self::RESULT_FAILED) {
-            Craft::warning('The error digest was not sent; the next run will try again.', Plugin::LOG_CATEGORY);
+            Log::warning('Freelog: the error digest was not sent; the next run will try again.');
         } else {
-            Craft::info("Error digest: $result.", Plugin::LOG_CATEGORY);
+            Log::info("Freelog: error digest {$result}.");
         }
 
         return $result;
@@ -387,30 +418,25 @@ class Digest extends Component
     /** @return array<string, mixed>|null */
     private function row(): ?array
     {
-        return (new Query())->from([self::TABLE])->where(['handle' => self::HANDLE])->one() ?: null;
+        $row = DB::table(self::TABLE)->where('handle', self::HANDLE)->first();
+
+        return $row === null ? null : (array) $row;
     }
 
-    /** Shared by `Install` and the migration that adds the table to an existing install. */
-    public static function createTable(Migration $migration): void
+    /**
+     * A date column as Craft stores it — UTC, no zone — as a DateTime in the system time zone.
+     */
+    private static function utcDate(mixed $value): ?DateTime
     {
-        $migration->createTable(self::TABLE, [
-            'id' => $migration->primaryKey(),
-            'handle' => $migration->string(64)->notNull(),
-            // The period last claimed: `2026-10-09` or `2026-W41`. Null until the first run.
-            'period' => $migration->string(32),
-            // JSON: per log file, the byte position the last digest read up to. Null until the
-            // first digest is recorded.
-            'offsets' => $migration->mediumText(),
-            'lastRunAt' => $migration->dateTime(),
-            'lastSentAt' => $migration->dateTime(),
-            'lastResult' => $migration->string(32),
-            'lastCount' => $migration->integer()->notNull()->defaultValue(0),
-            'dateCreated' => $migration->dateTime()->notNull(),
-            'dateUpdated' => $migration->dateTime()->notNull(),
-            'uid' => $migration->uid(),
-        ]);
+        if (! is_string($value) || $value === '') {
+            return null;
+        }
 
-        $migration->createIndex(null, self::TABLE, ['handle'], true);
+        try {
+            return new DateTime($value, new DateTimeZone('UTC'))->setTimezone(new DateTimeZone(Cms::systemTimezone()));
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     // ---------------------------------------------------------------------------- the email
@@ -418,24 +444,61 @@ class Digest extends Component
     /**
      * Renders and sends. Null when an event handler cancelled it.
      *
-     * @param string[] $recipients
-     * @param array{groups: array<string, array<string, mixed>>, total: int, ungrouped: int, offsets: array<string, mixed>, files: array<string, int>, levels: array<string, int>} $scan
+     * @param  string[]  $recipients
+     * @param  Scan  $scan
      */
     private function deliver(array $recipients, array $scan, bool $test): ?int
     {
-        $event = new DigestEvent([
-            'recipients' => $recipients,
-            'subject' => $this->subject($scan['total'], $test),
-            'variables' => $this->variables($scan, $test),
-            'isTest' => $test,
-        ]);
-        $this->trigger(self::EVENT_BEFORE_SEND, $event);
+        $event = new SendingDigest(
+            recipients: $recipients,
+            subject: $this->subject($scan['total'], $test),
+            variables: $this->variables($scan, $test),
+            isTest: $test,
+        );
+        event($event);
 
-        if (!$event->isValid) {
+        if (! $event->isValid) {
             return null;
         }
 
-        return Mailer::send($event->recipients, $event->subject, 'freelog/_emails/digest', $event->variables);
+        return $this->send($event->recipients, $event->subject, $event->variables);
+    }
+
+    /**
+     * One message per recipient: the people on a digest list do not necessarily know each other,
+     * and putting them all in one `To:` tells each of them who else gets it.
+     *
+     * Sent through Craft's mail settings (Settings → Email: from address, mailer), synchronously —
+     * the digest already runs from the scheduler or a queue job, and the result decides whether
+     * the period counts as sent.
+     *
+     * @param  list<string>  $recipients
+     * @param  array<string, mixed>  $variables
+     * @return int How many recipients the mailer accepted the message for.
+     */
+    private function send(array $recipients, string $subject, array $variables): int
+    {
+        $sent = 0;
+
+        foreach (array_unique($recipients) as $recipient) {
+            try {
+                // A fresh mailable each time: `to()` adds to a mailable's recipients, so reusing
+                // one would send the second message to the first recipient as well.
+                if (Mail::to($recipient)->sendNow(new DigestMail($subject, $variables)) !== null) {
+                    $sent++;
+
+                    continue;
+                }
+
+                Log::warning("Freelog: the mailer refused a message to {$recipient}: {$subject}");
+            } catch (Throwable $e) {
+                // One bad address or a transport hiccup should not cost every other recipient
+                // their copy.
+                Log::warning("Freelog: could not email {$recipient}: ".$e->getMessage());
+            }
+        }
+
+        return $sent;
     }
 
     // ===================================================================== What this plugin reports
@@ -453,13 +516,18 @@ class Digest extends Component
      * content read from the rotated copy beside it. Gzipped rotations are never read: their
      * content was reported while it was the live log.
      *
-     * @param array<string, array{file: string, offset: int, head?: string|null}>|null $offsets Null on the first run.
-     * @param DateTimeImmutable|null $since On the first run only: ignore entries older than this.
-     * @return array{groups: array<string, array<string, mixed>>, total: int, ungrouped: int, offsets: array<string, array{file: string, offset: int, head?: string|null}>, files: array<string, int>, levels: array<string, int>}
+     * Laravel's `daily` driver never renames: each day gets a new `laravel-YYYY-MM-DD.log`, which
+     * is read from the top, and files older than `LOG_DAILY_DAYS` are deleted, which drops their
+     * positions. A deleted file's inode can come back on the next day's file, so a position only
+     * carries over to a file of the same name or a rotation of it (`web.log` → `web.log.1`).
+     *
+     * @param  array<string, Position>|null  $offsets  Null on the first run.
+     * @param  DateTimeImmutable|null  $since  On the first run only: ignore entries older than this.
+     * @return Scan
      */
     public function collect(?array $offsets, ?DateTimeImmutable $since = null): array
     {
-        $logs = Plugin::current()->getLogService();
+        $logs = $this->logs;
         $settings = $this->settings();
         $levels = $settings->levelList();
         $cutoff = $since?->format('Y-m-d H:i:s');
@@ -478,14 +546,15 @@ class Digest extends Component
             }
 
             clearstatcache(true, $path);
-            $inode = (int)@fileinode($path);
+            $inode = (int) @fileinode($path);
             $stat = @stat($path);
-            $device = $stat !== false ? (int)$stat['dev'] : 0;
+            $device = $stat !== false ? (int) $stat['dev'] : 0;
 
             $files[$file['name']] = [
                 'name' => $file['name'],
-                'key' => $inode > 0 ? "i:$device:$inode" : 'n:' . $file['name'],
-                'size' => (int)@filesize($path),
+                'key' => $inode > 0 ? "i:$device:$inode" : 'n:'.$file['name'],
+                'size' => (int) @filesize($path),
+                'modified' => $file['modified'],
                 'rotated' => $logs->isRotated($file['name']),
             ];
         }
@@ -510,17 +579,27 @@ class Digest extends Component
 
             if ($offsets === null) {
                 // First run: live logs from the top (entries before `$since` are skipped),
-                // rotated copies not at all.
-                $plan[$name] = $file['rotated'] ? $file['size'] : 0;
+                // rotated copies not at all, and nor are logs nobody has written to since —
+                // last month's daily files would be read through only to be skipped.
+                $stale = $since !== null && $file['modified'] < $since->getTimestamp();
+                $plan[$name] = $file['rotated'] || $stale ? $file['size'] : 0;
+
                 continue;
             }
 
             $previous = $known[$file['key']]['offset'] ?? null;
+            $knownName = $known[$file['key']]['file'] ?? $name;
+
+            if ($previous !== null && $knownName !== $name && ! str_starts_with($name, $knownName)) {
+                // Same inode, unrelated name: the old file was deleted and its inode reused.
+                $previous = null;
+            }
 
             if ($previous === null) {
                 // A log we have not seen: a new live log is all new; a rotated copy we have not
                 // seen holds what the live log held, which was read then.
                 $plan[$name] = $file['rotated'] ? $file['size'] : 0;
+
                 continue;
             }
 
@@ -532,8 +611,8 @@ class Digest extends Component
                 // holds the rest of what we had not read yet.
                 $plan[$name] = 0;
 
-                foreach ([$name . '.1', $name . '.0'] as $sibling) {
-                    if (isset($files[$sibling]) && !isset($known[$files[$sibling]['key']]) && $files[$sibling]['size'] >= $previous) {
+                foreach ([$name.'.1', $name.'.0'] as $sibling) {
+                    if (isset($files[$sibling]) && ! isset($known[$files[$sibling]['key']]) && $files[$sibling]['size'] >= $previous) {
                         $plan[$sibling] = $previous;
                         break;
                     }
@@ -553,11 +632,11 @@ class Digest extends Component
                 $entries = $logs->entriesSince($name, $start);
 
                 foreach ($entries as $entry) {
-                    if (!in_array($entry['level'], $levels, true)) {
+                    if (! in_array($entry['level'], $levels, true)) {
                         continue;
                     }
 
-                    if ($settings->digestIgnoreClientErrors && preg_match('/^yii\\\\web\\\\HttpException:4\d\d$/', $entry['category'])) {
+                    if ($settings->digestIgnoreClientErrors && self::isClientError($entry)) {
                         continue;
                     }
 
@@ -575,6 +654,36 @@ class Digest extends Component
         }
 
         return $scan;
+    }
+
+    /**
+     * Symfony's 4xx exception classes, as Laravel writes them into an entry's context.
+     */
+    private const CLIENT_ERROR_CLASSES = 'NotFound|AccessDenied|BadRequest|MethodNotAllowed|Unauthorized|Gone|Conflict|NotAcceptable|LengthRequired|Locked|PreconditionFailed|PreconditionRequired|UnprocessableEntity|UnsupportedMediaType|TooManyRequests';
+
+    /**
+     * Whether an entry is a 4xx HTTP exception: the visitor's mistake, not the site's.
+     *
+     * - Craft 5 logged them at error level, with Yii's `HttpException:404` as the category.
+     * - Craft 6 doesn't log them at all by default (Laravel's handler leaves `HttpException`
+     *   unreported). A site that reports them anyway gets Laravel's context:
+     *   `{"exception":"[object] (Symfony\\…\\NotFoundHttpException(code: 0): …`.
+     *
+     * @param  Entry  $entry
+     */
+    public static function isClientError(array $entry): bool
+    {
+        if (preg_match('/^yii[\\\\]web[\\\\]HttpException:4\d\d$/', $entry['category'])) {
+            return true;
+        }
+
+        $first = strstr($entry['message'], "\n", true);
+        $first = $first === false ? $entry['message'] : $first;
+
+        return (bool) preg_match(
+            '/\{"exception":"\[object\] \((?:Symfony\\\\\\\\Component\\\\\\\\HttpKernel\\\\\\\\Exception\\\\\\\\)(?:'.self::CLIENT_ERROR_CLASSES.')HttpException\(/',
+            $first,
+        );
     }
 
     /**
@@ -601,8 +710,8 @@ class Digest extends Component
      * numbers, quoted values and ids in it are set aside. A thousand "Undefined array key 17"
      * from one bad template is one line in the email with a count, not a thousand.
      *
-     * @param array{groups: array<string, array<string, mixed>>, total: int, ungrouped: int, offsets: array<string, mixed>, files: array<string, int>, levels: array<string, int>} $scan
-     * @param array{date: string, level: string, category: string, message: string} $entry
+     * @param  Scan  $scan
+     * @param  array{date: string, level: string, category: string, message: string}  $entry
      */
     private function add(array &$scan, string $file, array $entry): void
     {
@@ -611,9 +720,9 @@ class Digest extends Component
         $scan['levels'][$entry['level']] = ($scan['levels'][$entry['level']] ?? 0) + 1;
 
         [$message, $trace] = self::split($entry['message']);
-        $key = substr(md5($entry['level'] . '|' . $entry['category'] . '|' . self::fingerprint($message)), 0, 16);
+        $key = substr(md5($entry['level'].'|'.$entry['category'].'|'.self::fingerprint($message)), 0, 16);
 
-        if (!isset($scan['groups'][$key])) {
+        if (! isset($scan['groups'][$key])) {
             if (count($scan['groups']) >= self::MAX_GROUPS) {
                 $scan['ungrouped']++;
 
@@ -636,7 +745,7 @@ class Digest extends Component
         $group['message'] = $message;
         $group['trace'] = $trace;
 
-        if (count($group['files']) < 5 && !in_array($file, $group['files'], true)) {
+        if (count($group['files']) < 5 && ! in_array($file, $group['files'], true)) {
             $group['files'][] = $file;
         }
     }
@@ -645,18 +754,28 @@ class Digest extends Component
      * An entry's first line, without the JSON context Monolog appends to it, and the lines after
      * it (the stack trace), at most {@see MAX_TRACE_LINES} of them.
      *
+     * Laravel writes an exception into the context as one JSON string with real line breaks in it
+     * — `{"exception":"[object] (Class(code: 0): message at file:line)` on the first line, then
+     * `[stacktrace]`, `#0 …` and a closing `"}` — so that context never decodes. It is cut at its
+     * start instead, and the trace keeps the frames without the markers.
+     *
      * @return array{string, string}
      */
     public static function split(string $message): array
     {
         $lines = explode("\n", $message);
-        $first = (string)array_shift($lines);
+        $first = (string) array_shift($lines);
+
+        if (preg_match('/\s\{"exception":"\[object\] \(/', $first, $found, PREG_OFFSET_CAPTURE)) {
+            $first = substr($first, 0, $found[0][1]);
+            $lines = array_filter($lines, fn ($line) => ! preg_match('/^(\[stacktrace\]|"\}\s*(\[\])?\s*)$/', $line));
+        }
 
         // Monolog's line format ends with the record's context and extra as JSON: ` {"…":…} []`.
         // Strip up to two trailing JSON values, trying the leftmost candidate first so a whole
         // nested object goes rather than its last key.
         for ($pass = 0; $pass < 2; $pass++) {
-            if (!preg_match_all('/\s(?=\{"|\[\]\s*$|\[\]\s+\{)/', $first, $found, PREG_OFFSET_CAPTURE)) {
+            if (! preg_match_all('/\s(?=\{"|\[\]\s*$|\[\]\s+\{)/', $first, $found, PREG_OFFSET_CAPTURE)) {
                 break;
             }
 
@@ -672,12 +791,12 @@ class Digest extends Component
                 }
             }
 
-            if (!$stripped) {
+            if (! $stripped) {
                 break;
             }
         }
 
-        $trace = array_slice(array_filter($lines, fn($line) => trim($line) !== ''), 0, self::MAX_TRACE_LINES);
+        $trace = array_slice(array_filter($lines, fn ($line) => trim($line) !== ''), 0, self::MAX_TRACE_LINES);
 
         return [trim($first), implode("\n", $trace)];
     }
@@ -685,7 +804,7 @@ class Digest extends Component
     /** A message with what varies between occurrences taken out. */
     public static function fingerprint(string $message): string
     {
-        return (string)preg_replace(
+        return (string) preg_replace(
             [
                 '/(["\']).*?\1/',                            // quoted values
                 '/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i', // UUIDs
@@ -699,22 +818,22 @@ class Digest extends Component
 
     private function subject(int $count, bool $test): string
     {
-        $system = Craft::$app->getSystemName();
+        $system = Cms::systemName();
         $subject = $count > 0
-            ? Craft::t('freelog', '{count, plural, =1{One new log error} other{# new log errors}} on {site}', [
+            ? t('{count, plural, =1{One new log error} other{# new log errors}} on {site}', [
                 'count' => $count,
                 'site' => $system,
-            ])
-            : Craft::t('freelog', 'No new log errors on {site}', ['site' => $system]);
+            ], category: 'freelog')
+            : t('No new log errors on {site}', ['site' => $system], category: 'freelog');
 
-        return ($test ? Craft::t('freelog', '[Test]') . ' ' : '') . 'Freelog: ' . $subject;
+        return ($test ? t('[Test]', category: 'freelog').' ' : '').'Freelog: '.$subject;
     }
 
     /**
      * What the email templates see. Every string that came out of a log is redacted here, once,
      * so neither template — nor an event handler that only adds to them — can quote it raw.
      *
-     * @param array{groups: array<string, array<string, mixed>>, total: int, ungrouped: int, offsets: array<string, mixed>, files: array<string, int>, levels: array<string, int>} $scan
+     * @param  Scan  $scan
      * @return array<string, mixed>
      */
     private function variables(array $scan, bool $test): array
@@ -724,7 +843,7 @@ class Digest extends Component
         $rank = array_flip(Settings::LEVELS);
 
         $groups = array_values($scan['groups']);
-        usort($groups, fn(array $a, array $b) => [$rank[$a['level']] ?? 99, -$a['count'], $b['lastSeen']]
+        usort($groups, fn (array $a, array $b) => [$rank[$a['level']] ?? 99, -$a['count'], $b['lastSeen']]
             <=> [$rank[$b['level']] ?? 99, -$b['count'], $a['lastSeen']]);
 
         $items = [];
@@ -732,16 +851,16 @@ class Digest extends Component
         foreach (array_slice($groups, 0, self::MAX_ITEMS) as $group) {
             $items[] = [
                 'level' => $group['level'],
-                'category' => $redactor->redact((string)$group['category'], 200),
+                'category' => $redactor->redact((string) $group['category'], 200),
                 'count' => $group['count'],
                 'firstSeen' => $group['firstSeen'],
                 'lastSeen' => $group['lastSeen'],
                 'files' => $group['files'],
-                'message' => $redactor->redact((string)$group['message'], self::MAX_MESSAGE),
+                'message' => $redactor->redact((string) $group['message'], self::MAX_MESSAGE),
                 'trace' => $settings->digestIncludeTraces && $group['trace'] !== ''
-                    ? $redactor->redact((string)$group['trace'], self::MAX_TRACE)
+                    ? $redactor->redact((string) $group['trace'], self::MAX_TRACE)
                     : null,
-                'url' => UrlHelper::cpUrl('freelog/view', ['file' => $group['files'][0] ?? '', 'level' => $group['level']]),
+                'url' => Url::cpUrl('freelog/view', ['file' => $group['files'][0] ?? '', 'level' => $group['level']]),
             ];
         }
 
@@ -749,13 +868,13 @@ class Digest extends Component
         $levels = [];
 
         foreach (Settings::LEVELS as $level) {
-            if (!empty($scan['levels'][$level])) {
+            if (! empty($scan['levels'][$level])) {
                 $levels[$level] = $scan['levels'][$level];
             }
         }
 
         return [
-            'siteName' => Craft::$app->getSystemName(),
+            'siteName' => Cms::systemName(),
             'isTest' => $test,
             'items' => $items,
             'total' => $scan['total'],
@@ -766,8 +885,8 @@ class Digest extends Component
             'files' => $scan['files'],
             'since' => $this->state()['lastSentAt'],
             'includeTraces' => $settings->digestIncludeTraces,
-            'logsUrl' => UrlHelper::cpUrl('freelog'),
-            'settingsUrl' => UrlHelper::cpUrl('freelog/settings'),
+            'logsUrl' => Url::cpUrl('freelog'),
+            'settingsUrl' => Url::cpUrl('settings/plugins/freelog'),
         ];
     }
 
@@ -775,7 +894,7 @@ class Digest extends Component
      * The first digest has no positions to start from. Rather than mail a log's whole history,
      * it covers one period back: the last day, or the last week.
      *
-     * @param array{offsets: array<string, mixed>|null} $state
+     * @param  array{offsets: array<string, mixed>|null}  $state
      */
     private function firstRunSince(array $state, DateTimeImmutable $now): ?DateTimeImmutable
     {
@@ -791,14 +910,11 @@ class Digest extends Component
     private function inSystemTime(DateTimeInterface $moment): DateTimeImmutable
     {
         return DateTimeImmutable::createFromInterface($moment)
-            ->setTimezone(new DateTimeZone(Craft::$app->getTimeZone()));
+            ->setTimezone(new DateTimeZone(Cms::systemTimezone()));
     }
 
     private function settings(): Settings
     {
-        /** @var Settings $settings */
-        $settings = Plugin::current()->getSettings();
-
-        return $settings;
+        return $this->settings ?? Plugin::getInstance()->getSettings();
     }
 }

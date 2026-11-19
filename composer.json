@@ -1,17 +1,21 @@
 {
     "name": "justinholtweb/craft-freelog",
-    "description": "View, search, filter, and download server logs from the Craft CMS control panel.",
+    "description": "View, search, filter, and download server logs from the Craft CMS control panel, with a redacted error digest by email.",
     "type": "craft-plugin",
-    "version": "5.1.0",
+    "version": "6.0.0-beta.1",
     "keywords": [
         "craft",
         "cms",
         "craftcms",
+        "craft-plugin",
         "logs",
         "server-logs",
-        "debugging"
+        "debugging",
+        "laravel"
     ],
     "license": "proprietary",
+    "minimum-stability": "beta",
+    "prefer-stable": true,
     "authors": [
         {
             "name": "Justin Holt",
@@ -23,41 +27,52 @@
         "source": "https://github.com/justinholtweb/craft-freelogs"
     },
     "require": {
-        "php": "^8.2",
-        "craftcms/cms": "^5.0.0"
+        "php": "^8.5",
+        "ext-mbstring": "*",
+        "ext-zlib": "*",
+        "craftcms/cms": "^6.0.0-beta.1"
     },
     "require-dev": {
-        "craftcms/phpstan": "dev-main",
-        "phpunit/phpunit": "^10.5",
-        "phpstan/phpstan": "^1.12 || ^2.2",
-        "craftcms/ecs": "dev-main"
+        "larastan/larastan": "^3.13",
+        "laravel/pint": "^1.22",
+        "orchestra/testbench": "^11.0",
+        "pestphp/pest": "^5.0",
+        "pestphp/pest-plugin-laravel": "^5.0",
+        "phpstan/phpstan": "^2.1"
     },
     "autoload": {
         "psr-4": {
-            "justinholtweb\\freelog\\": "src/"
+            "JustinHoltWeb\\Freelog\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "justinholtweb\\freelog\\tests\\": "tests/"
+            "JustinHoltWeb\\Freelog\\Tests\\": "tests/"
         }
     },
     "scripts": {
+        "test": "pest",
         "phpstan": "phpstan analyse --memory-limit=1G",
-        "test": "phpunit"
+        "check-cs": "pint --test",
+        "fix-cs": "pint"
     },
     "config": {
         "allow-plugins": {
-            "yiisoft/yii2-composer": true,
-            "craftcms/plugin-installer": true
-        }
+            "craftcms/plugin-installer": true,
+            "pestphp/pest-plugin": true
+        },
+        "platform": {
+            "php": "8.5"
+        },
+        "sort-packages": true
     },
     "extra": {
         "name": "Freelog",
         "handle": "freelog",
-        "hasCpSettings": false,
-        "hasCpSection": true,
-        "changelogUrl": "https://raw.githubusercontent.com/justinholtweb/craft-freelogs/main/CHANGELOG.md",
-        "class": "justinholtweb\\freelog\\Plugin"
+        "developer": "Justin Holt",
+        "developerUrl": "https://github.com/justinholtweb",
+        "documentationUrl": "https://github.com/justinholtweb/craft-freelogs",
+        "changelogUrl": "https://raw.githubusercontent.com/justinholtweb/craft-freelogs/6.0.0/CHANGELOG.md",
+        "class": "JustinHoltWeb\\Freelog\\Plugin"
     }
 }

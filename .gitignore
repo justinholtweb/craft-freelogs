@@ -1,7 +1,8 @@
-
 .DS_Store
 /.ddev
 /vendor
 composer.lock
 /.phpunit.cache
+/.pest
 .phpunit.result.cache
+.phpstan-cache

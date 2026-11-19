@@ -1,8 +1,11 @@
 <?php
 
-namespace justinholtweb\freelog\helpers;
+declare(strict_types=1);
 
-use Craft;
+namespace JustinHoltWeb\Freelog\Helpers;
+
+use CraftCms\Cms\Cms;
+use Throwable;
 
 /**
  * Takes secrets and personal data out of a log line that is about to leave the server.
@@ -11,8 +14,9 @@ use Craft;
  * goes to a mailbox, gets forwarded, sits in an archive long after the log was rotated away. So
  * every line the digest quotes passes through here first:
  *
- * - this install's own secrets **by value** — the security key, the database password, and every
- *   environment variable whose name says it is a key, secret, password, token, salt or DSN;
+ * - this install's own secrets **by value** — the application key (`APP_KEY`, and any previous
+ *   keys still configured), every database connection's password, and every environment variable
+ *   whose name says it is a key, secret, password, token, salt or DSN;
  * - anything **shaped** like a credential: `Bearer …`/`Basic …`, `password=…`, `"api_key":"…"`,
  *   `user:pass@` in a URL, JSON web tokens;
  * - **personal data**: email addresses keep their domain only, IPv4 addresses lose their last
@@ -41,44 +45,90 @@ final class Redactor
     private array $secrets;
 
     /**
-     * @param string[] $secrets Values to replace wherever they appear.
+     * @param  string[]  $secrets  Values to replace wherever they appear.
      */
     public function __construct(array $secrets = [])
     {
         $secrets = array_values(array_unique(array_filter(
             $secrets,
-            fn(string $secret) => strlen($secret) >= self::MIN_SECRET_LENGTH,
+            fn (string $secret) => strlen($secret) >= self::MIN_SECRET_LENGTH,
         )));
-        usort($secrets, fn(string $a, string $b) => strlen($b) <=> strlen($a));
+        usort($secrets, fn (string $a, string $b) => strlen($b) <=> strlen($a));
         $this->secrets = $secrets;
     }
 
     /**
-     * A redactor that knows this install's secrets: the security key, the database password, and
-     * every environment variable whose name marks it as one.
+     * A redactor that knows this install's secrets: the application key, every database
+     * connection's password, and every environment variable whose name marks it as one.
      */
     public static function forInstall(): self
     {
-        $secrets = [];
+        $config = [];
 
         try {
-            $secrets[] = (string)Craft::$app->getConfig()->getGeneral()->securityKey;
-            $secrets[] = (string)Craft::$app->getConfig()->getDb()->password;
-        } catch (\Throwable) {
+            $config = [
+                'app.key' => config('app.key'),
+                'app.previous_keys' => config('app.previous_keys'),
+                'database.connections' => config('database.connections'),
+                'securityKey' => Cms::config()->securityKey,
+            ];
+        } catch (Throwable) {
             // A half-configured install still gets the pattern rules.
         }
 
-        $environment = array_merge(getenv() ?: [], $_ENV, array_filter($_SERVER, 'is_string'));
+        return new self(self::installSecrets(
+            $config,
+            array_merge(getenv() ?: [], $_ENV, array_filter($_SERVER, 'is_string')),
+        ));
+    }
+
+    /**
+     * The secret values in an install's config and environment.
+     *
+     * Laravel's `APP_KEY` is `base64:…`; the key itself and its encoded part both count, since a
+     * log line can hold either. Craft 5's `CRAFT_SECURITY_KEY` is caught by its name.
+     *
+     * @param  array<string, mixed>  $config  `app.key`, `app.previous_keys`, `database.connections`,
+     *                                        and Craft's `securityKey` general config setting.
+     * @param  array<array-key, mixed>  $environment
+     * @return list<string>
+     */
+    public static function installSecrets(array $config, array $environment): array
+    {
+        $secrets = [];
+        $keys = [$config['app.key'] ?? null, $config['securityKey'] ?? null, ...(array) ($config['app.previous_keys'] ?? [])];
+
+        foreach ($keys as $key) {
+            if (is_string($key) && $key !== '') {
+                $secrets[] = $key;
+
+                if (str_starts_with($key, 'base64:')) {
+                    $secrets[] = substr($key, 7);
+                }
+            }
+        }
+
+        foreach ((array) ($config['database.connections'] ?? []) as $connection) {
+            if (is_array($connection) && is_string($connection['password'] ?? null)) {
+                $secrets[] = $connection['password'];
+            }
+        }
 
         foreach ($environment as $name => $value) {
             // A plain word (`AUTH_METHOD=password`) is a setting, not a secret, and masking it
             // would mask that word in every line.
-            if (is_string($name) && is_string($value) && preg_match(self::SECRET_ENV_NAME, $name) && !preg_match('/^[a-z]{1,15}$/i', $value)) {
+            // `PWD` is the shell's working directory, not a password: masking it would mask the
+            // project path in every stack trace.
+            if (in_array($name, ['PWD', 'OLDPWD'], true)) {
+                continue;
+            }
+
+            if (is_string($name) && is_string($value) && preg_match(self::SECRET_ENV_NAME, $name) && ! preg_match('/^[a-z]{1,15}$/i', $value)) {
                 $secrets[] = $value;
             }
         }
 
-        return new self($secrets);
+        return array_values(array_unique($secrets));
     }
 
     /**
@@ -96,42 +146,42 @@ final class Redactor
         $keys = self::SECRET_KEYS;
         $replacements = [
             // URL credentials: scheme://user:pass@host → scheme://••••@host
-            '~\b([a-z][a-z0-9+.\-]*://)[^\s/@:]+:[^\s/@]+@~i' => '$1' . self::MASK . '@',
+            '~\b([a-z][a-z0-9+.\-]*://)[^\s/@:]+:[^\s/@]+@~i' => '$1'.self::MASK.'@',
             // HTTP auth schemes — when what follows looks like a credential, so "CSRF token
             // expired" and "Basic authentication failed" keep their words.
-            '/\b(Bearer|Basic|Digest|Token)\s+(?=[A-Za-z0-9\-._~+\/]*\d)[A-Za-z0-9\-._~+\/]{8,}=*/i' => '$1 ' . self::MASK,
-            '/\b(Bearer|Basic|Digest|Token)\s+[A-Za-z0-9\-._~+\/]{20,}=*/i' => '$1 ' . self::MASK,
+            '/\b(Bearer|Basic|Digest|Token)\s+(?=[A-Za-z0-9\-._~+\/]*\d)[A-Za-z0-9\-._~+\/]{8,}=*/i' => '$1 '.self::MASK,
+            '/\b(Bearer|Basic|Digest|Token)\s+[A-Za-z0-9\-._~+\/]{20,}=*/i' => '$1 '.self::MASK,
             // JSON web tokens anywhere.
             '/\beyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]*/' => self::MASK,
             // A quoted value after a secret name: "password": "x", 'token' => 'x', password="x".
-            '/((?:["\']?)\b(?:' . $keys . ')\b["\']?\s*(?:=>|[:=])\s*)(["\'])(?:\\\\.|(?!\2).)*\2/i' => '$1$2' . self::MASK . '$2',
+            '/((?:["\']?)\b(?:'.$keys.')\b["\']?\s*(?:=>|[:=])\s*)(["\'])(?:\\\\.|(?!\2).)*\2/i' => '$1$2'.self::MASK.'$2',
             // print_r: [password] => x
-            '/(\[(?:' . $keys . ')\]\s*=>\s*)\S[^\n]*/i' => '$1' . self::MASK,
+            '/(\[(?:'.$keys.')\]\s*=>\s*)\S[^\n]*/i' => '$1'.self::MASK,
             // An unquoted value after `=`, spaced or not: password=x, ?api_key=x&, secret = x.
-            '/(\b(?:' . $keys . ')\b\s*=(?!>)\s*)(?!["\'\s])[^\s"\'&,;}\]\)]+/i' => '$1' . self::MASK,
+            '/(\b(?:'.$keys.')\b\s*=(?!>)\s*)(?!["\'\s])[^\s"\'&,;}\]\)]+/i' => '$1'.self::MASK,
             // An unquoted value bound tight to a colon: token:x. Not `Token::find()`, not `://`.
-            '/(\b(?:' . $keys . ')\b:(?![:\/]))(?!["\'\s])[^\s"\'&,;}\]\)]+/i' => '$1' . self::MASK,
+            '/(\b(?:'.$keys.')\b:(?![:\/]))(?!["\'\s])[^\s"\'&,;}\]\)]+/i' => '$1'.self::MASK,
             // An unquoted value after a colon and a space ("token: abc123…") only when it looks
             // like a credential — digits in it and 8+ characters, or 20+ unbroken. "Invalid CSRF
             // token: missing" keeps "missing".
-            '/(\b(?:' . $keys . ')\b\s*:\s+)(?=[A-Za-z0-9\-._~+\/=]*\d)[A-Za-z0-9\-._~+\/=]{8,}/i' => '$1' . self::MASK,
-            '/(\b(?:' . $keys . ')\b\s*:\s+)[A-Za-z0-9\-._~+\/=]{20,}/i' => '$1' . self::MASK,
+            '/(\b(?:'.$keys.')\b\s*:\s+)(?=[A-Za-z0-9\-._~+\/=]*\d)[A-Za-z0-9\-._~+\/=]{8,}/i' => '$1'.self::MASK,
+            '/(\b(?:'.$keys.')\b\s*:\s+)[A-Za-z0-9\-._~+\/=]{20,}/i' => '$1'.self::MASK,
             // Email addresses keep their domain: jo@example.com → •••@example.com.
-            '/[A-Za-z0-9._%+\-]+@([A-Za-z0-9\-]+(?:\.[A-Za-z0-9\-]+)*\.[A-Za-z]{2,})/' => self::MASK . '@$1',
+            '/[A-Za-z0-9._%+\-]+@([A-Za-z0-9\-]+(?:\.[A-Za-z0-9\-]+)*\.[A-Za-z]{2,})/' => self::MASK.'@$1',
             // IPv4 addresses lose their last octet. Not inside version strings (1.2.3.4.5).
             '/(?<![\d.])((?:25[0-5]|2[0-4]\d|1?\d?\d)\.(?:25[0-5]|2[0-4]\d|1?\d?\d)\.(?:25[0-5]|2[0-4]\d|1?\d?\d)\.)(?:25[0-5]|2[0-4]\d|1?\d?\d)(?![\d.])/' => '$1x',
         ];
 
-        $text = (string)preg_replace(array_keys($replacements), array_values($replacements), $text);
+        $text = (string) preg_replace(array_keys($replacements), array_values($replacements), $text);
 
         // Card numbers: 13–19 digits, optionally spaced or dashed in groups, that pass Luhn.
-        $text = (string)preg_replace_callback(
+        $text = (string) preg_replace_callback(
             '/(?<![\d])(?:\d[ \-]?){12,18}\d(?![\d])/',
-            fn(array $m) => self::luhn((string)preg_replace('/\D/', '', $m[0])) ? self::MASK : $m[0],
+            fn (array $m) => self::luhn((string) preg_replace('/\D/', '', $m[0])) ? self::MASK : $m[0],
             $text,
         );
 
-        return mb_strlen($text) > $maxLength ? mb_substr($text, 0, $maxLength - 1) . '…' : $text;
+        return mb_strlen($text) > $maxLength ? mb_substr($text, 0, $maxLength - 1).'…' : $text;
     }
 
     private static function luhn(string $digits): bool
@@ -145,7 +195,7 @@ final class Redactor
         $sum = 0;
 
         for ($i = 0; $i < $length; $i++) {
-            $digit = (int)$digits[$length - 1 - $i];
+            $digit = (int) $digits[$length - 1 - $i];
 
             if ($i % 2 === 1) {
                 $digit *= 2;

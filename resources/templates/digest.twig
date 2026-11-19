@@ -1,0 +1,49 @@
+{# Freelog → Error digest: when it last ran and next goes, and "Send a test digest now".
+   A partial rendered inside CpScreenResponse::contentTemplate(). Admins only (routes/cp.php). #}
+<div class="freelog freelog-digest">
+    <dl class="freelog-status">
+        <dt>{{ 'Scheduled digest'|t('freelog') }}</dt>
+        <dd>
+            {% if settings.digestEnabled %}
+                {{ (settings.digestFrequency == 'weekly' ? 'Weekly'|t('freelog') : 'Daily'|t('freelog')) }},
+                {{ 'from {hour} ({zone})'|t('freelog', { hour: '%02d:00'|format(settings.digestHour), zone: timeZone }) }}
+            {% else %}
+                {{ 'Switched off'|t('freelog') }}
+            {% endif %}
+        </dd>
+        <dt>{{ 'Recipients'|t('freelog') }}</dt>
+        <dd>{{ recipients|length ? recipients|join(', ') : 'None yet'|t('freelog') }}</dd>
+        <dt>{{ 'Last sent'|t('freelog') }}</dt>
+        <dd>
+            {% if state.lastSentAt %}
+                {{ state.lastSentAt|datetime('short') }}
+                ({{ '{count, plural, =1{one entry} other{# entries}}'|t('freelog', { count: state.lastCount }) }})
+            {% else %}
+                {{ 'Not sent yet. The first digest covers the last day (or week) of each log.'|t('freelog') }}
+            {% endif %}
+        </dd>
+        {% if state.lastRunAt %}
+            <dt>{{ 'Last run'|t('freelog') }}</dt>
+            <dd>{{ state.lastRunAt|datetime('short') }} — {{ state.lastResult }}</dd>
+        {% endif %}
+        <dt>{{ 'Next due'|t('freelog') }}</dt>
+        <dd>{{ next ? next|datetime('short') : '—' }}</dd>
+        <dt>{{ 'Logs tracked'|t('freelog') }}</dt>
+        <dd>{{ state.offsets is null ? '—' : state.offsets|length }}</dd>
+    </dl>
+
+    <p><a href="{{ settingsUrl }}">{{ 'Change the schedule, recipients and what it reports'|t('freelog') }}</a></p>
+
+    <h2>{{ 'Send a test'|t('freelog') }}</h2>
+    <form method="post" action="{{ testUrl }}">
+        {{ csrf_field() }}
+        <button type="submit" class="btn submit">{{ 'Send a test digest now'|t('freelog') }}</button>
+    </form>
+    <p class="freelog-hint">
+        {% if recipients|length %}
+            {{ 'Goes to the digest’s recipients, marked as a test. It does not count as this period’s digest, and the next one still reports the same errors.'|t('freelog') }}
+        {% else %}
+            {{ 'No recipients are set, so the test comes to you.'|t('freelog') }}
+        {% endif %}
+    </p>
+</div>

@@ -1,17 +1,8 @@
-{% extends '_layouts/cp.twig' %}
-
-{% do view.registerAssetBundle('justinholtweb\\freelog\\assetbundles\\FreelogAsset') %}
-{% do view.registerTranslations('freelog', [
-    'Are you sure you want to clear this log file? This cannot be undone.',
-]) %}
-
-{% set title = 'Freelog'|t('freelog') %}
-{% set selectedSubnavItem = 'logs' %}
-
-{% block content %}
+{# Freelog → the log files in storage/logs. A partial rendered inside CpScreenResponse::contentTemplate(). #}
+<div class="freelog" data-freelog-confirm="{{ 'Are you sure you want to clear this log file? This cannot be undone.'|t('freelog') }}">
     {% if files|length %}
         <div class="freelog-file-list">
-            <table class="data fullwidth">
+            <table class="data fullwidth freelog-table">
                 <thead>
                     <tr>
                         <th scope="col">{{ 'File'|t('freelog') }}</th>
@@ -31,16 +22,15 @@
                             </td>
                             <td class="freelog-file-meta">{{ file.sizeFormatted }}</td>
                             <td class="freelog-file-meta">{{ file.modifiedFormatted }}</td>
-                            <td class="thin freelog-file-actions">
-                                <div class="flex flex-nowrap">
+                            <td class="freelog-file-actions">
+                                <div class="freelog-actions">
                                     <a href="{{ cpUrl('freelog/view', { file: file.name }) }}" class="btn small">{{ 'View'|t('freelog') }}</a>
-                                    <a href="{{ cpUrl('freelog/download', { file: file.name }) }}" class="btn small">{{ 'Download'|t('freelog') }}</a>
+                                    <a href="{{ cpUrl('freelog/download', { file: file.name }) }}" class="btn small" download>{{ 'Download'|t('freelog') }}</a>
                                     {% if canClear %}
-                                        <form method="post" class="freelog-clear-form">
-                                            {{ csrfInput() }}
-                                            {{ actionInput('freelog/logs/clear') }}
-                                            {{ hiddenInput('file', file.name) }}
-                                            <button type="submit" class="btn small secondary">{{ 'Clear'|t('freelog') }}</button>
+                                        <form method="post" action="{{ cpUrl('freelog/clear') }}" class="freelog-clear-form">
+                                            {{ csrf_field() }}
+                                            <input type="hidden" name="file" value="{{ file.name }}">
+                                            <button type="submit" class="btn small">{{ 'Clear'|t('freelog') }}</button>
                                         </form>
                                     {% endif %}
                                 </div>
@@ -55,4 +45,4 @@
             <p>{{ 'No log files found.'|t('freelog') }}</p>
         </div>
     {% endif %}
-{% endblock %}
+</div>

@@ -1,0 +1,119 @@
+{# Freelog → one log file: search, level filter, tail, and a page of entries, newest first.
+   A partial rendered inside CpScreenResponse::contentTemplate(). #}
+{% set levels = {
+    emergency: 'Emergency'|t('freelog'),
+    alert: 'Alert'|t('freelog'),
+    critical: 'Critical'|t('freelog'),
+    error: 'Error'|t('freelog'),
+    warning: 'Warning'|t('freelog'),
+    notice: 'Notice'|t('freelog'),
+    info: 'Info'|t('freelog'),
+    debug: 'Debug'|t('freelog'),
+} %}
+
+<div class="freelog freelog-view"
+     data-freelog-confirm="{{ 'Are you sure you want to clear this log file? This cannot be undone.'|t('freelog') }}"
+     data-freelog-start="{{ 'Start auto-refresh'|t('freelog') }}"
+     data-freelog-stop="{{ 'Stop auto-refresh'|t('freelog') }}">
+
+    <form method="get" action="{{ cpUrl('freelog/view') }}" class="freelog-toolbar" id="freelog-filter">
+        <label class="visually-hidden" for="freelog-file">{{ 'Log file'|t('freelog') }}</label>
+        <select id="freelog-file" name="file" class="freelog-select" data-freelog-autosubmit>
+            {% for file in files %}
+                <option value="{{ file.name }}" {{ file.name == filename ? 'selected' }}>{{ file.name }}{{ file.compressed ? ' (gz)' }}</option>
+            {% endfor %}
+        </select>
+        <label class="visually-hidden" for="freelog-search">{{ 'Search log entries'|t('freelog') }}</label>
+        <input type="search" id="freelog-search" name="search" value="{{ search }}" class="text freelog-search" placeholder="{{ 'Search log entries'|t('freelog') }}">
+        <label class="visually-hidden" for="freelog-level">{{ 'Level'|t('freelog') }}</label>
+        <select id="freelog-level" name="level" class="freelog-select" data-freelog-autosubmit>
+            <option value="">{{ 'All levels'|t('freelog') }}</option>
+            {% for value, label in levels %}
+                <option value="{{ value }}" {{ value == level ? 'selected' }}>{{ label }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn submit">{{ 'Filter'|t('freelog') }}</button>
+        <a href="{{ cpUrl('freelog/download', { file: filename }) }}" class="btn" download>{{ 'Download'|t('freelog') }}</a>
+    </form>
+
+    <div class="freelog-tail-controls">
+        <button type="button" id="freelog-tail-toggle" class="btn small" aria-controls="freelog-tail-content" aria-expanded="false">{{ 'Start auto-refresh'|t('freelog') }}</button>
+        <span id="freelog-tail-status" class="freelog-tail-status">
+            <span class="dot"></span>
+            {{ 'Auto-refresh'|t('freelog') }}
+        </span>
+    </div>
+    <div id="freelog-tail-content" class="freelog-tail" data-tail-url="{{ cpUrl('freelog/tail', { file: filename }) }}" aria-live="polite" hidden></div>
+
+    {% if entries|length %}
+        <div class="freelog-entries">
+            <table class="data fullwidth freelog-table">
+                <thead>
+                    <tr>
+                        <th scope="col" class="col-date">{{ 'Date'|t('freelog') }}</th>
+                        <th scope="col" class="col-level">{{ 'Level'|t('freelog') }}</th>
+                        <th scope="col" class="col-category">{{ 'Category'|t('freelog') }}</th>
+                        <th scope="col">{{ 'Message'|t('freelog') }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in entries %}
+                        <tr data-expandable tabindex="0" aria-expanded="false">
+                            <td class="col-date">{{ entry.date }}</td>
+                            <td class="col-level">
+                                <span class="freelog-level freelog-level-{{ entry.level|lower }}">{{ levels[entry.level|lower] ?? entry.level }}</span>
+                            </td>
+                            <td class="col-category" title="{{ entry.category }}">{{ entry.category }}</td>
+                            <td class="col-message">
+                                <span class="message-preview">{{ entry.message|split("\n")|first }}</span>
+                                <span class="message-full">{{ entry.message }}</span>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if totalPages > 1 %}
+            <div class="freelog-pagination">
+                <span class="page-info">
+                    {{ 'Showing {first}–{last} of {total} entries'|t('freelog', {
+                        first: ((page - 1) * limit) + 1,
+                        last: min(page * limit, total),
+                        total: total,
+                    }) }}
+                </span>
+                <div class="page-links">
+                    {% if page > 1 %}
+                        <a href="{{ cpUrl('freelog/view', { file: filename, search: search, level: level, page: page - 1 }) }}" class="btn small" rel="prev">{{ 'Previous'|t('freelog') }}</a>
+                    {% endif %}
+                    {% if page < totalPages %}
+                        <a href="{{ cpUrl('freelog/view', { file: filename, search: search, level: level, page: page + 1 }) }}" class="btn small" rel="next">{{ 'Next'|t('freelog') }}</a>
+                    {% endif %}
+                </div>
+            </div>
+        {% elseif total %}
+            <p class="freelog-count">{{ '{total, plural, =1{One entry} other{# entries}}'|t('freelog', { total: total }) }}</p>
+        {% endif %}
+    {% else %}
+        <div class="freelog-empty">
+            <p>
+                {% if total %}
+                    {{ 'There are only {total, plural, =1{one entry} other{# entries}}; this page is past the end.'|t('freelog', { total: total }) }}
+                {% elseif search or level %}
+                    {{ 'No entries match your filters.'|t('freelog') }}
+                {% else %}
+                    {{ 'This log file is empty or could not be parsed.'|t('freelog') }}
+                {% endif %}
+            </p>
+        </div>
+    {% endif %}
+
+    {% if canClear %}
+        <form method="post" action="{{ cpUrl('freelog/clear') }}" class="freelog-clear-form freelog-clear-bottom">
+            {{ csrf_field() }}
+            <input type="hidden" name="file" value="{{ filename }}">
+            <button type="submit" class="btn small">{{ 'Clear this log'|t('freelog') }}</button>
+        </form>
+    {% endif %}
+</div>

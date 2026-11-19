@@ -1,32 +1,32 @@
 <?php
 
-namespace justinholtweb\freelog\jobs;
+declare(strict_types=1);
 
-use Craft;
-use craft\queue\BaseJob;
-use justinholtweb\freelog\Plugin;
+namespace JustinHoltWeb\Freelog\Jobs;
+
+use CraftCms\Cms\Queue\Job;
+use JustinHoltWeb\Freelog\Services\Digest;
+
+use function CraftCms\Cms\t;
 
 /**
  * Sends the error digest if it is due. Queued by the web fallback trigger.
  *
- * Decides nothing itself: {@see \justinholtweb\freelog\services\Digest::run()} checks the schedule
- * and claims the period, so a job that runs late, twice, or after cron already sent is a no-op.
+ * Decides nothing itself: {@see Digest::run()} checks the schedule and claims the period, so a
+ * job that runs late, twice, or after the scheduler already sent is a no-op.
  */
-class SendDigest extends BaseJob
+class SendDigest extends Job
 {
-    public function execute($queue): void
+    /** Reading a day's or a week's worth of new log lines, then one email per recipient. */
+    public int $timeout = 900;
+
+    public function handle(Digest $digest): void
     {
-        Plugin::current()->digest->run();
+        $digest->run();
     }
 
-    protected function defaultDescription(): ?string
+    protected function defaultDescription(): string
     {
-        return Craft::t('freelog', 'Sending the Freelog error digest');
-    }
-
-    public function getTtr(): int
-    {
-        // Reading a day's or a week's worth of new log lines, then one email per recipient.
-        return 900;
+        return t('Sending the Freelog error digest', category: 'freelog');
     }
 }

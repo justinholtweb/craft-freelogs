@@ -1,18 +1,25 @@
 <?php
 
-namespace justinholtweb\freelog\services;
+declare(strict_types=1);
 
-use Craft;
-use craft\base\Component;
+namespace JustinHoltWeb\Freelog\Services;
+
 use DateTime;
 use DirectoryIterator;
 use Generator;
 use Throwable;
 
 /**
- * Log service.
+ * Reads the logs in `storage/logs`: lists them, pages through their entries, tails them, clears
+ * them, and resolves a requested name to a file — or to nothing, for anything outside the folder.
+ *
+ * Craft 6 writes through Laravel's Monolog (`[2026-11-19 10:06:21] local.ERROR: message {json}`),
+ * and an upgraded site keeps its Craft 5 logs (`2026-10-09 12:00:00 [web.ERROR] [category] …`)
+ * in the same folder, so both are parsed; each file's format is recognised from its first entry.
+ *
+ * @phpstan-type Entry array{date: string, level: string, category: string, message: string}
  */
-class LogService extends Component
+class LogService
 {
     /** Bytes read at a time, and the most of one physical line held at once. */
     public const READ_CHUNK = 65536;
@@ -26,12 +33,21 @@ class LogService extends Component
     /** Up to this many entries (offset + limit) a page is found in one pass; beyond it, two. */
     public const SINGLE_PASS_WINDOW = 2000;
 
+    /** Laravel 11+ / Craft 6, and any Monolog `LineFormatter` log: `[date] channel.LEVEL: message`. */
+    public const string FORMAT_MONOLOG = 'monolog';
+
+    /** Craft 5: `date [channel.LEVEL] [category] message`. */
+    public const string FORMAT_CRAFT5 = 'craft5';
+
+    /** Craft 3 and 4 (Yii's file target): `date [level][category] message`. */
+    public const string FORMAT_YII = 'yii';
+
     /**
      * Returns the path to the logs directory.
      */
     public function getLogsPath(): string
     {
-        return Craft::getAlias('@storage/logs');
+        return storage_path('logs');
     }
 
     /**
@@ -43,7 +59,7 @@ class LogService extends Component
     {
         $path = $this->getLogsPath();
 
-        if (!is_dir($path)) {
+        if (! is_dir($path)) {
             return [];
         }
 
@@ -57,7 +73,7 @@ class LogService extends Component
 
             $filename = $file->getFilename();
 
-            if (!$this->_isSupportedLogFile($filename)) {
+            if (! $this->_isSupportedLogFile($filename)) {
                 continue;
             }
 
@@ -69,7 +85,7 @@ class LogService extends Component
             ];
         }
 
-        usort($files, fn($a, $b) => $b['modified'] <=> $a['modified']);
+        usort($files, fn ($a, $b) => $b['modified'] <=> $a['modified']);
 
         return $files;
     }
@@ -86,7 +102,7 @@ class LogService extends Component
      *   last offset + limit matches in a ring buffer;
      * - a deep page is two passes — count the matches, then collect just the page.
      *
-     * @return array{entries: list<array{date: string, level: string, category: string, message: string}>, total: int}
+     * @return array{entries: list<Entry>, total: int}
      */
     public function getLogEntries(
         string $filename,
@@ -105,7 +121,7 @@ class LogService extends Component
         $level = $level !== null && $level !== '' ? $level : null;
         $search = $search !== null && $search !== '' ? mb_strtolower($search) : null;
 
-        $matches = static function(array $entry) use ($level, $search): bool {
+        $matches = static function (array $entry) use ($level, $search): bool {
             if ($level !== null && strcasecmp($entry['level'], $level) !== 0) {
                 return false;
             }
@@ -150,7 +166,7 @@ class LogService extends Component
 
         if ($to > 0) {
             foreach ($this->_entries($filepath) as $entry) {
-                if (!$matches($entry)) {
+                if (! $matches($entry)) {
                     continue;
                 }
                 if ($position >= $from && $position < $to) {
@@ -203,7 +219,7 @@ class LogService extends Component
             $truncated = false;
 
             try {
-                while (!gzeof($handle)) {
+                while (! gzeof($handle)) {
                     $chunk = gzread($handle, self::READ_CHUNK);
 
                     if ($chunk === false || $chunk === '') {
@@ -254,7 +270,7 @@ class LogService extends Component
     /**
      * Drops a partial first line when the tail starts mid-file, and scrubs invalid UTF-8.
      *
-     * @param array{string, bool} $tail
+     * @param  array{string, bool}  $tail
      */
     private function _wholeLines(array $tail): string
     {
@@ -283,7 +299,7 @@ class LogService extends Component
         }
 
         // Keep gzipped files valid after clearing so they can still be read.
-        $empty = $this->isCompressed($filename) ? (string)gzencode('') : '';
+        $empty = $this->isCompressed($filename) ? (string) gzencode('') : '';
 
         return file_put_contents($filepath, $empty) !== false;
     }
@@ -295,7 +311,7 @@ class LogService extends Component
      * are read — one still being written stays for next time — and the generator returns the
      * position to start from next time (`$from` itself when nothing could be read).
      *
-     * @return Generator<int, array{date: string, level: string, category: string, message: string}, mixed, int>
+     * @return Generator<int, Entry, mixed, int>
      */
     public function entriesSince(string $filename, int $from): Generator
     {
@@ -314,7 +330,7 @@ class LogService extends Component
      */
     public function isRotated(string $filename): bool
     {
-        return !preg_match('/\.(log|txt)$/i', $filename);
+        return ! preg_match('/\.(log|txt)$/i', $filename);
     }
 
     /**
@@ -337,13 +353,13 @@ class LogService extends Component
     {
         $filename = basename($filename);
 
-        if (!$this->_isSupportedLogFile($filename)) {
+        if (! $this->_isSupportedLogFile($filename)) {
             return null;
         }
 
-        $filepath = $this->getLogsPath() . DIRECTORY_SEPARATOR . $filename;
+        $filepath = $this->getLogsPath().DIRECTORY_SEPARATOR.$filename;
 
-        if (!file_exists($filepath) || !is_file($filepath)) {
+        if (! file_exists($filepath) || ! is_file($filepath)) {
             return null;
         }
 
@@ -354,7 +370,7 @@ class LogService extends Component
             return null;
         }
 
-        if (!str_starts_with($realPath, $logsRealPath . DIRECTORY_SEPARATOR)) {
+        if (! str_starts_with($realPath, $logsRealPath.DIRECTORY_SEPARATOR)) {
             return null;
         }
 
@@ -368,14 +384,14 @@ class LogService extends Component
     {
         $units = ['B', 'KB', 'MB', 'GB'];
         $i = 0;
-        $size = (float)$bytes;
+        $size = (float) $bytes;
 
         while ($size >= 1024 && $i < count($units) - 1) {
             $size /= 1024;
             $i++;
         }
 
-        return round($size, 1) . ' ' . $units[$i];
+        return round($size, 1).' '.$units[$i];
     }
 
     /**
@@ -387,7 +403,7 @@ class LogService extends Component
      */
     private function _isSupportedLogFile(string $filename): bool
     {
-        return (bool)preg_match(
+        return (bool) preg_match(
             '/\.(log|txt)(\.\d+|-\d+)?(\.gz)?$/i',
             $filename,
         );
@@ -430,15 +446,15 @@ class LogService extends Component
             while (($chunk = $compressed ? gzgets($handle, self::READ_CHUNK) : fgets($handle, self::READ_CHUNK)) !== false) {
                 $complete = str_ends_with($chunk, "\n");
 
-                if (!$complete && $completeOnly && ($compressed ? gzeof($handle) : feof($handle))) {
+                if (! $complete && $completeOnly && ($compressed ? gzeof($handle) : feof($handle))) {
                     break;
                 }
 
                 yield [rtrim($chunk, "\r\n"), $continued];
-                $continued = !$complete;
+                $continued = ! $complete;
 
                 if ($complete) {
-                    $position = $compressed ? $position + strlen($chunk) : (int)ftell($handle);
+                    $position = $compressed ? $position + strlen($chunk) : (int) ftell($handle);
                 }
             }
         } finally {
@@ -452,20 +468,26 @@ class LogService extends Component
      * A file's entries, streamed, oldest first.
      *
      * A line that starts an entry closes the previous one; anything else is a continuation of it
-     * (a stack trace, a dumped array). Blank lines are skipped. A message is capped at
-     * {@see MAX_MESSAGE_BYTES} — past that its lines are counted, not kept — so one runaway dump
-     * can't take the memory back.
+     * (a stack trace, a dumped array, the rest of Laravel's JSON context). Blank lines are
+     * skipped. A message is capped at {@see MAX_MESSAGE_BYTES} — past that its lines are counted,
+     * not kept — so one runaway dump can't take the memory back.
      *
-     * @return Generator<int, array{date: string, level: string, category: string, message: string}, mixed, int>
+     * The first entry in a recognised format (Laravel/Monolog, Craft 5, Craft 3/4) fixes the
+     * file's format, and from then on only that format starts an entry. A Laravel trace or a
+     * dumped SQL query can hold a line that happens to start with a date; it stays part of its
+     * entry instead of being split off as a new one.
+     *
+     * @return Generator<int, Entry, mixed, int>
      */
     private function _entries(string $filepath, int $from = 0, bool $completeOnly = false): Generator
     {
         $current = null;
         $full = false;
+        $format = null;
         $lines = $this->_lines($filepath, $from, $completeOnly);
 
         foreach ($lines as [$line, $continued]) {
-            $start = $continued ? null : $this->_parseEntryStart($line);
+            $start = $continued ? null : self::parseEntryStart($line, $format);
 
             if ($start !== null) {
                 if ($current !== null) {
@@ -476,7 +498,7 @@ class LogService extends Component
                 $full = false;
 
                 if (strlen($current['message']) > self::MAX_MESSAGE_BYTES) {
-                    $current['message'] = mb_strcut($current['message'], 0, self::MAX_MESSAGE_BYTES) . self::TRUNCATED;
+                    $current['message'] = mb_strcut($current['message'], 0, self::MAX_MESSAGE_BYTES).self::TRUNCATED;
                     $full = true;
                 }
 
@@ -487,10 +509,10 @@ class LogService extends Component
                 continue;
             }
 
-            $current['message'] .= ($continued ? '' : "\n") . $line;
+            $current['message'] .= ($continued ? '' : "\n").$line;
 
             if (strlen($current['message']) > self::MAX_MESSAGE_BYTES) {
-                $current['message'] = mb_strcut($current['message'], 0, self::MAX_MESSAGE_BYTES) . self::TRUNCATED;
+                $current['message'] = mb_strcut($current['message'], 0, self::MAX_MESSAGE_BYTES).self::TRUNCATED;
                 $full = true;
             }
         }
@@ -506,57 +528,90 @@ class LogService extends Component
      * Parses the first line of an entry, or returns null for any other line.
      *
      * Supports:
+     * - Monolog/Laravel: [2026-11-19 10:06:21] local.ERROR: message {"exception":"…"}
+     *                    [2024-01-15T10:30:45+00:00] channel.LEVEL: message
      * - Craft 5 default: 2026-04-03 11:52:11 [channel.LEVEL] [category] message
-     * - Monolog:         [2024-01-15T10:30:45+00:00] channel.LEVEL: message
      * - Craft 3/4 Yii:   2024-01-15 10:30:45 [level][category] message
      * - Plain level:     2026-04-14 14:15:37 [LEVEL] message (e.g. Formie)
      * - Bracketed date:  [2026-04-15 07:33:42] message (e.g. Blitz)
      * - Bare date:       2026-04-10 14:30:42 message
      *
-     * @return array{date: string, level: string, category: string, message: string}|null
+     * The first three are a file's *format*: once `$format` holds one, only lines in that format
+     * start an entry. The last three are fallbacks for plugin logs and never fix a format.
+     *
+     * For a Laravel entry the category is the channel — the environment name Laravel writes
+     * (`local`, `production`), or `laravel` for its own emergency logger.
+     *
+     * @param  string|null  $format  In: the file's format so far, if known. Out: updated.
+     * @return Entry|null
      */
-    private function _parseEntryStart(string $line): ?array
+    public static function parseEntryStart(string $line, ?string &$format = null): ?array
     {
         // Every format starts with a digit or a bracket. Checking that first keeps the regexes off
         // the continuation lines — most of the lines in a log with stack traces in it.
         $first = $line[0] ?? '';
 
-        if ($first !== '[' && !ctype_digit($first)) {
+        if ($first !== '[' && ! ctype_digit($first)) {
             return null;
         }
 
-        // Craft 5 format: 2026-04-03 11:52:11 [channel.LEVEL] [category] message
-        if (preg_match('/^(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})\s\[(\S+?)\.(\w+)\]\s\[([^\]]*)\]\s?(.*)/', $line, $m)) {
+        if ($format === null || $format === self::FORMAT_MONOLOG) {
+            // [2026-11-19 10:06:21] local.ERROR: message
+            if ($first === '[' && preg_match('/^\[(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^\]]*)\]\s+(\S+?)\.([A-Za-z]+):\s?(.*)/', $line, $m)) {
+                $format = self::FORMAT_MONOLOG;
+                $date = $m[1];
+
+                if (strlen($date) > 19) {
+                    try {
+                        $date = new DateTime($date)->format('Y-m-d H:i:s');
+                    } catch (Throwable) {
+                    }
+                }
+
+                // Monolog leaves a space where an empty `%extra%` would be.
+                return ['date' => $date, 'level' => strtolower($m[3]), 'category' => $m[2], 'message' => rtrim($m[4])];
+            }
+
+            if ($format !== null) {
+                return null;
+            }
+        }
+
+        if (! ctype_digit($first)) {
+            // Only Monolog and the bracketed-date fallback start with a bracket.
+            if ($format === null && preg_match('/^\[(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})\]\s?(.*)/', $line, $m)) {
+                return ['date' => $m[1], 'level' => 'info', 'category' => '', 'message' => $m[2]];
+            }
+
+            return null;
+        }
+
+        // 2026-04-03 11:52:11 [channel.LEVEL] [category] message
+        if (($format === null || $format === self::FORMAT_CRAFT5)
+            && preg_match('/^(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})\s\[(\S+?)\.(\w+)\]\s\[([^\]]*)\]\s?(.*)/', $line, $m)) {
+            $format = self::FORMAT_CRAFT5;
+
             return ['date' => $m[1], 'level' => strtolower($m[3]), 'category' => $m[4], 'message' => $m[5]];
         }
 
-        // Monolog format: [2024-01-15T10:30:45+00:00] channel.LEVEL: message
-        if (preg_match('/^\[(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^\]]*)\]\s+(\S+?)\.(\w+):\s?(.*)/', $line, $m)) {
-            $date = $m[1];
-            try {
-                $date = (new DateTime($date))->format('Y-m-d H:i:s');
-            } catch (Throwable) {
-            }
+        // 2024-01-15 10:30:45 [level][category] message
+        if (($format === null || $format === self::FORMAT_YII)
+            && preg_match('/^(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})\s\[(\w+)\]\[([^\]]*)\]\s?(.*)/', $line, $m)) {
+            $format = self::FORMAT_YII;
 
-            return ['date' => $date, 'level' => strtolower($m[3]), 'category' => $m[2], 'message' => $m[4]];
-        }
-
-        // Craft 3/4 Yii format: 2024-01-15 10:30:45 [level][category] message
-        if (preg_match('/^(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})\s\[(\w+)\]\[([^\]]*)\]\s?(.*)/', $line, $m)) {
             return ['date' => $m[1], 'level' => strtolower($m[2]), 'category' => $m[3], 'message' => $m[4]];
         }
 
-        // Plain level format: 2026-04-14 14:15:37 [LEVEL] message
+        if ($format !== null) {
+            return null;
+        }
+
+        // 2026-04-14 14:15:37 [LEVEL] message
         if (preg_match('/^(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})\s\[(\w+)\]\s?(.*)/', $line, $m)) {
             return ['date' => $m[1], 'level' => strtolower($m[2]), 'category' => '', 'message' => $m[3]];
         }
 
-        // Bracketed date format: [2026-04-15 07:33:42] message
-        if (preg_match('/^\[(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})\]\s?(.*)/', $line, $m)) {
-            return ['date' => $m[1], 'level' => 'info', 'category' => '', 'message' => $m[2]];
-        }
-
-        // Bare date format: 2026-04-10 14:30:42 message
+        // 2026-04-10 14:30:42 message
         if (preg_match('/^(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})\s(.*)/', $line, $m)) {
             return ['date' => $m[1], 'level' => 'info', 'category' => '', 'message' => $m[2]];
         }
