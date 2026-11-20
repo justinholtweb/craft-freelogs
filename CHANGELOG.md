@@ -1,5 +1,11 @@
 # Changelog
 
+## 6.0.0-beta.2 - 2026-11-20
+
+### Changed
+
+- The changelog is now shared between the Craft 5 and Craft 6 branches, so each lists both release lines.
+
 ## 6.0.0-beta.1 - 2026-11-19
 
 Freelog for Craft CMS 6, rebuilt as a native Craft 6 plugin. It runs on Laravel and has no
@@ -34,6 +40,12 @@ dependency on the Yii 2 adapter. Craft 6 is in beta, and so is this release. Upd
 ### Internal
 
 - Tests moved to Pest, with parser tests on real Laravel and Craft 5 log excerpts and tests for the digest's read positions across Laravel's daily rotation. Pint and Larastan (level 6) replace ECS and PHPStan's Craft ruleset. The Craft 5 integration scripts were dropped; the same checks were run against the Craft 6 test harness.
+
+## 5.1.1 - 2026-11-20
+
+### Changed
+
+- The changelog is now shared between the Craft 5 and Craft 6 branches, so each lists both release lines.
 
 ## 5.1.0 - 2026-10-09
 ### Added
