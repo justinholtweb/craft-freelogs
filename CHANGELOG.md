@@ -1,6 +1,6 @@
 # Changelog
 
-## 6.0.0-beta.1 - Unreleased
+## 6.0.0-beta.1 - 2026-11-19
 
 Freelog for Craft CMS 6, rebuilt as a native Craft 6 plugin. It runs on Laravel and has no
 dependency on the Yii 2 adapter. Craft 6 is in beta, and so is this release. Update to Freelog
